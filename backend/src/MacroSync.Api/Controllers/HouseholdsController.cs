@@ -3,14 +3,26 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MacroSync.Api.Controllers;
 
-[ApiController]
 [Route("api/v1/households")]
-public class HouseholdsController(IHouseholdService households, IMealPlanService plans) : ControllerBase
+public class HouseholdsController(IHouseholdService households, IMealPlanService plans) : ApiControllerBase
 {
+    public record JoinRequest(string InviteCode, Guid UserId);
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<HouseholdDto>> Get(Guid id, CancellationToken ct)
     {
         var household = await households.GetAsync(id, ct);
+        return household is null ? NotFound() : Ok(household);
+    }
+
+    /// <summary>Invite/join via invite code.</summary>
+    [HttpPost("{id:guid}/members")]
+    public async Task<ActionResult<HouseholdDto>> Join(Guid id, JoinRequest request, CancellationToken ct)
+    {
+        var userId = CurrentUserId(fallback: request.UserId);
+        if (userId is null) return Unauthorized();
+
+        var household = await households.JoinAsync(id, request.InviteCode, userId.Value, ct);
         return household is null ? NotFound() : Ok(household);
     }
 

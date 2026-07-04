@@ -20,6 +20,11 @@ public sealed class MockDb
     public List<Ingredient> Ingredients { get; } = [];
     public List<Recipe> Recipes { get; } = [];
     public MealPlan Plan { get; }
+    public List<FoodLog> FoodLogs { get; } = [];
+    public List<RecalcSuggestion> Suggestions { get; } = [];
+
+    public IReadOnlyDictionary<Guid, Ingredient> IngredientsById => _ingredientsById ??= Ingredients.ToDictionary(i => i.Id);
+    private Dictionary<Guid, Ingredient>? _ingredientsById;
 
     public Ingredient Ing(string name) => Ingredients.First(i => i.Name == name);
     public Recipe Rec(string name) => Recipes.First(r => r.Name == name);
@@ -119,24 +124,6 @@ public sealed class MockDb
             ("Banana", 200, true, even), ("Egg", 120, false, even), ("Rolled oats", 100, true, even), ("Whey protein", 40, true, even));
     }
 
-    /// <summary>Rounding steps that feel cookable per ingredient (solver §6: never output 187 g).</summary>
-    private static decimal RoundingStep(string name) => name switch
-    {
-        "Egg" => 60m,                 // whole eggs
-        "Chicken breast" or "Beef sirloin" or "Salmon fillet" or "Turkey mince" => 25m,
-        "Olive oil" or "Honey" or "Soy sauce" => 5m,
-        _ => 10m,
-    };
-
-    private RecipeSnapshot Snapshot(Recipe recipe) => new(
-        recipe.Id, recipe.Name,
-        recipe.Ingredients.Select(ri =>
-        {
-            var ing = Ingredients.First(i => i.Id == ri.IngredientId);
-            return new SolverIngredient(ing.Id, ing.Name, ri.QuantityG, ri.IsDivisible, ri.SplitRule,
-                ing.KcalPer100G, ing.ProteinPer100G, ing.CarbsPer100G, ing.FatPer100G, RoundingStep(ing.Name));
-        }).ToList());
-
     private MealPlan BuildWeekPlan(DateOnly weekStart)
     {
         var plan = new MealPlan { Id = Guid.Parse("22222222-2222-2222-2222-222222222222"), HouseholdId = HouseholdId, WeekStartDate = weekStart };
@@ -153,40 +140,15 @@ public sealed class MockDb
             [(SlotType.Breakfast, "Protein Oats with Berries"), (SlotType.Lunch, "Beef Stir-Fry with Rice"), (SlotType.Dinner, "Grilled Chicken & Sweet Potato")],
         ];
 
-        // Slot budget as a share of the daily target; used as "remaining kcal" for the solver.
-        static decimal SlotShare(SlotType slot) => slot switch
-        {
-            SlotType.Breakfast => 0.25m,
-            SlotType.Lunch => 0.33m,
-            SlotType.Dinner => 0.34m,
-            _ => 0.08m,
-        };
+        var eaters = Profiles.Where(p => p.IsActive)
+            .Select(p => (p.UserId, p.CalorieTarget))
+            .ToList();
 
         for (var d = 0; d < 7; d++)
         {
             var date = weekStart.AddDays(d);
             foreach (var (slot, recipeName) in week[d])
-            {
-                var recipe = Rec(recipeName);
-                var eaters = Profiles.Where(p => p.IsActive)
-                    .Select(p => new EaterTarget(p.UserId, p.CalorieTarget * SlotShare(slot)))
-                    .ToList();
-
-                var solved = PortionSolver.Solve(Snapshot(recipe), eaters);
-
-                var meal = new PlannedMeal { Id = Guid.NewGuid(), MealPlanId = plan.Id, Date = date, SlotType = slot, RecipeId = recipe.Id };
-                meal.Portions.AddRange(solved.Portions.Select(p => new MealPortion
-                {
-                    PlannedMealId = meal.Id,
-                    UserId = p.UserId,
-                    IngredientGrams = p.IngredientGrams,
-                    Kcal = p.Kcal,
-                    ProteinG = p.ProteinG,
-                    CarbsG = p.CarbsG,
-                    FatG = p.FatG,
-                }));
-                plan.Meals.Add(meal);
-            }
+                plan.Meals.Add(Solving.SolvePlannedMeal(plan.Id, date, slot, Rec(recipeName), IngredientsById, eaters));
         }
 
         return plan;

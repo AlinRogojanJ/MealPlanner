@@ -77,6 +77,8 @@ public class MealPlan
     public Guid Id { get; set; }
     public Guid HouseholdId { get; set; }
     public DateOnly WeekStartDate { get; set; }
+    /// <summary>Capability URL token for the anonymous read-only grocery share link.</summary>
+    public string? ShareToken { get; set; }
     public List<PlannedMeal> Meals { get; set; } = [];
 }
 
@@ -123,4 +125,25 @@ public class RecalcSuggestion
     public DateOnly Date { get; set; }
     public string PayloadJson { get; set; } = "{}";
     public SuggestionStatus Status { get; set; }
+    public Guid? FoodLogId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public class RefreshToken
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public string TokenHash { get; set; } = "";
+    /// <summary>Rotation family — reuse of a revoked member invalidates the whole family.</summary>
+    public Guid FamilyId { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? RevokedAtUtc { get; set; }
+    public bool IsActive => RevokedAtUtc is null && ExpiresAtUtc > DateTime.UtcNow;
+}
+
+public class ExternalLogin
+{
+    public Guid UserId { get; set; }
+    public string Provider { get; set; } = ""; // "Google"
+    public string ProviderKey { get; set; } = ""; // Google `sub`
 }

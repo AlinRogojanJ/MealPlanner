@@ -68,3 +68,80 @@ public record RecipeDto(
 public record GroceryItemDto(string Name, string Aisle, decimal TotalQuantityG);
 
 public record GroceryListDto(Guid PlanId, string WeekStartDate, List<GroceryItemDto> Items);
+
+public record ShareLinkDto(string ShareToken, string Url);
+
+// ---- Auth ----
+
+public record RegisterRequest(string Email, string Password, string DisplayName);
+
+public record LoginRequest(string Email, string Password);
+
+public record GoogleSignInRequest(string IdToken);
+
+public record RefreshRequest(string RefreshToken);
+
+public record AuthResponse(
+    string AccessToken,
+    string RefreshToken,
+    DateTime AccessTokenExpiresAtUtc,
+    Guid UserId,
+    string DisplayName,
+    string Email);
+
+// ---- Profile ----
+
+public record UpdateProfileRequest(
+    int CalorieTarget,
+    int ProteinG,
+    int CarbsG,
+    int FatG,
+    string DietType); // Cut | Maintain | Bulk
+
+// ---- Planning writes ----
+
+public record AddMealRequest(string Date, string SlotType, Guid RecipeId);
+
+public record SolveMealRequest(List<Guid>? SkippedUserIds);
+
+// ---- Off-plan logging & recalc ----
+
+public record LogFoodRequest(
+    Guid UserId,          // from JWT once auth is enforced; explicit for now
+    string Date,
+    string Description,
+    decimal Kcal,
+    decimal ProteinG,
+    decimal CarbsG,
+    decimal FatG);
+
+public record FoodLogDto(
+    Guid Id,
+    Guid UserId,
+    string Date,
+    string Source,
+    string Description,
+    decimal Kcal,
+    decimal ProteinG,
+    decimal CarbsG,
+    decimal FatG);
+
+public record MealAdjustmentDto(
+    Guid PlannedMealId,
+    string RecipeName,
+    string SlotType,
+    decimal OldKcal,
+    decimal NewKcal,
+    decimal Scale);
+
+public record SuggestionDto(
+    Guid Id,
+    Guid UserId,
+    string Date,
+    string Status,
+    decimal OverageKcal,
+    decimal AbsorbedKcal,
+    decimal UnabsorbedKcal,
+    List<MealAdjustmentDto> Adjustments);
+
+public record LogFoodResponse(FoodLogDto Log, SuggestionDto? Suggestion);
