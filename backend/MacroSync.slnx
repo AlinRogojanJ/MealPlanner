@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MacroSync.Api/MacroSync.Api.csproj" />
+    <Project Path="src/MacroSync.Application/MacroSync.Application.csproj" />
+    <Project Path="src/MacroSync.Domain/MacroSync.Domain.csproj" />
+    <Project Path="src/MacroSync.Infrastructure/MacroSync.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MacroSync.IntegrationTests/MacroSync.IntegrationTests.csproj" />
+    <Project Path="tests/MacroSync.UnitTests/MacroSync.UnitTests.csproj" />
+  </Folder>
+</Solution>
