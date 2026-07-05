@@ -1,10 +1,14 @@
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { api, DEMO_HOUSEHOLD_ID } from '../../api/client'
+import type { MemberDto } from '../../api/types'
 import { useWeekPlan } from './useWeekPlan'
 import { formatWeekRange, shiftWeek } from '../../lib/dates'
 import { memberColor } from '../../lib/memberColors'
 import { useUiStore } from '../../stores/uiStore'
 import { DayColumn } from './DayColumn'
 import { AddMealModal } from './AddMealModal'
+import { ProfileModal } from '../household/ProfileModal'
 
 const DEMO_WEEK = '2026-06-29' // week seeded in the backend store
 
@@ -14,6 +18,14 @@ export function WeekView() {
   const selectedWeek = useUiStore((s) => s.selectedWeek)
   const setSelectedWeek = useUiStore((s) => s.setSelectedWeek)
   const [addMealDate, setAddMealDate] = useState<string>()
+  const [editMember, setEditMember] = useState<MemberDto>()
+  const queryClient = useQueryClient()
+
+  const createWeek = useMutation({
+    mutationFn: () => api.createWeekPlan(DEMO_HOUSEHOLD_ID, selectedWeek),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] }),
+  })
 
   const weekNav = (
     <div className="flex items-center gap-1">
@@ -55,9 +67,20 @@ export function WeekView() {
           </div>
           {weekNav}
         </div>
-        <div className="rounded-xl border border-dashed border-slate-300 p-16 text-center text-sm text-slate-400">
-          No plan for this week yet. Creating new weeks arrives with the next milestone —
-          jump back to the demo week to see the planner in action.
+        <div className="rounded-xl border border-dashed border-slate-300 p-16 text-center">
+          <p className="mb-4 text-sm text-slate-400">No plan for this week yet.</p>
+          <button
+            onClick={() => createWeek.mutate()}
+            disabled={createWeek.isPending}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {createWeek.isPending ? 'Creating…' : 'Start planning this week'}
+          </button>
+          {createWeek.isError && (
+            <p className="mt-3 text-xs text-red-600">
+              Couldn't create — is the API running? ({String(createWeek.error)})
+            </p>
+          )}
         </div>
       </div>
     )
@@ -76,7 +99,12 @@ export function WeekView() {
             {plan.members.map((member, idx) => {
               const color = memberColor(idx)
               return (
-                <div key={member.userId} className={`flex items-center gap-2 rounded-lg px-3 py-1.5 ${color.chipBg}`}>
+                <button
+                  key={member.userId}
+                  onClick={() => setEditMember(member)}
+                  title="Edit targets"
+                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-shadow hover:shadow ${color.chipBg}`}
+                >
                   <span className={`h-2 w-2 rounded-full ${color.dot}`} />
                   <div className="leading-tight">
                     <p className={`text-sm font-semibold ${color.text}`}>{member.displayName}</p>
@@ -84,7 +112,7 @@ export function WeekView() {
                       {member.calorieTarget} kcal · {member.dietType} · P{member.proteinG} C{member.carbsG} F{member.fatG}
                     </p>
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
@@ -101,6 +129,8 @@ export function WeekView() {
       {addMealDate && (
         <AddMealModal planId={plan.planId} date={addMealDate} onClose={() => setAddMealDate(undefined)} />
       )}
+
+      {editMember && <ProfileModal member={editMember} onClose={() => setEditMember(undefined)} />}
     </div>
   )
 }

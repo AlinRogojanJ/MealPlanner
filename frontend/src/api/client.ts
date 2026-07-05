@@ -6,6 +6,7 @@ import type {
   HouseholdDto,
   LogFoodRequest,
   LogFoodResponse,
+  MemberDto,
   PlannedMealDto,
   RecipeDto,
   ShareLinkDto,
@@ -86,6 +87,24 @@ export const api = {
 
   solveMeal: (mealId: string, skippedUserIds: string[]) =>
     post<PlannedMealDto>(`/api/v1/meals/${mealId}/solve`, { skippedUserIds }),
+
+  createWeekPlan: (householdId: string, weekStartDate: string) =>
+    post<WeekPlanDto>(`/api/v1/households/${householdId}/plans`, { weekStartDate }),
+
+  updateProfile: (
+    userId: string,
+    request: { calorieTarget: number; proteinG: number; carbsG: number; fatG: number; dietType: string },
+  ) => {
+    // userId query param is the dev fallback until [Authorize] is enforced.
+    return fetch(`/api/v1/users/me/profile?userId=${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(request),
+    }).then(async (res) => {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return (await res.json()) as MemberDto
+    })
+  },
 
   createShareLink: (planId: string) =>
     post<ShareLinkDto>(`/api/v1/plans/${planId}/grocery-list/share`, {}),

@@ -26,6 +26,19 @@ public class HouseholdsController(IHouseholdService households, IMealPlanService
         return household is null ? NotFound() : Ok(household);
     }
 
+    public record CreatePlanRequest(string WeekStartDate);
+
+    /// <summary>Create an empty plan for a week (idempotent — returns the existing one).</summary>
+    [HttpPost("{id:guid}/plans")]
+    public async Task<ActionResult<WeekPlanDto>> CreateWeekPlan(Guid id, CreatePlanRequest request, CancellationToken ct)
+    {
+        if (!DateOnly.TryParse(request.WeekStartDate, out var weekStart))
+            return BadRequest(new ProblemDetails { Title = "weekStartDate must be a valid yyyy-MM-dd date." });
+
+        var plan = await plans.CreateWeekPlanAsync(id, weekStart, ct);
+        return plan is null ? NotFound() : Ok(plan);
+    }
+
     /// <summary>Weekly calendar with all portions and running totals — the main page.</summary>
     [HttpGet("{id:guid}/plans")]
     public async Task<ActionResult<WeekPlanDto>> GetWeekPlan(Guid id, [FromQuery] string? week, CancellationToken ct)

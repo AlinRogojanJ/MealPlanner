@@ -153,6 +153,22 @@ public class SqlMealPlanService(MacroSyncDbContext db) : IMealPlanService
         return new WeekPlanDto(plan.Id, householdId, plan.WeekStartDate.ToString("yyyy-MM-dd"), members, days);
     }
 
+    public async Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
+    {
+        var exists = await db.Households.AnyAsync(h => h.Id == householdId, ct);
+        if (!exists) return null;
+
+        var plan = await db.MealPlans
+            .FirstOrDefaultAsync(p => p.HouseholdId == householdId && p.WeekStartDate == weekStart, ct);
+        if (plan is null)
+        {
+            plan = new MealPlan { Id = Guid.NewGuid(), HouseholdId = householdId, WeekStartDate = weekStart };
+            db.MealPlans.Add(plan);
+            await db.SaveChangesAsync(ct);
+        }
+        return await GetWeekPlanAsync(householdId, weekStart, ct);
+    }
+
     public async Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default)
     {
         var plan = await db.MealPlans.FirstOrDefaultAsync(p => p.Id == planId, ct);

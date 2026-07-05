@@ -19,7 +19,9 @@ public sealed class MockDb
     public List<NutritionProfile> Profiles { get; } = [];
     public List<Ingredient> Ingredients { get; } = [];
     public List<Recipe> Recipes { get; } = [];
-    public MealPlan Plan { get; }
+    /// <summary>All plans; the seeded demo week is Plans[0] (also exposed as Plan).</summary>
+    public List<MealPlan> Plans { get; } = [];
+    public MealPlan Plan => Plans[0];
     public List<FoodLog> FoodLogs { get; } = [];
     public List<RecalcSuggestion> Suggestions { get; } = [];
 
@@ -52,7 +54,7 @@ public sealed class MockDb
 
         SeedIngredients();
         SeedRecipes();
-        Plan = BuildWeekPlan(new DateOnly(2026, 6, 29)); // Mon of the current demo week
+        Plans.Add(BuildWeekPlan(new DateOnly(2026, 6, 29))); // Mon of the current demo week
     }
 
     private void AddIngredient(string name, decimal kcal, decimal p, decimal c, decimal f, string aisle) =>

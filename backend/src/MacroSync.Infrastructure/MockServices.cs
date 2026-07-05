@@ -65,18 +65,36 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
 {
     public Task<WeekPlanDto?> GetWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
     {
-        // Only the seeded demo week exists in mock mode; other weeks 404 so the
-        // frontend shows its honest empty state.
-        if (householdId != db.Household.Id || weekStart != db.Plan.WeekStartDate)
+        // Weeks that don't exist yet 404 so the frontend shows its honest empty state.
+        var plan = db.Plans.FirstOrDefault(p => p.WeekStartDate == weekStart);
+        if (householdId != db.Household.Id || plan is null)
             return Task.FromResult<WeekPlanDto?>(null);
 
+        return Task.FromResult<WeekPlanDto?>(BuildWeekDto(plan, householdId));
+    }
+
+    public Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
+    {
+        if (householdId != db.Household.Id) return Task.FromResult<WeekPlanDto?>(null);
+
+        var plan = db.Plans.FirstOrDefault(p => p.WeekStartDate == weekStart);
+        if (plan is null)
+        {
+            plan = new MealPlan { Id = Guid.NewGuid(), HouseholdId = householdId, WeekStartDate = weekStart };
+            db.Plans.Add(plan);
+        }
+        return Task.FromResult<WeekPlanDto?>(BuildWeekDto(plan, householdId));
+    }
+
+    private WeekPlanDto BuildWeekDto(MealPlan plan, Guid householdId)
+    {
         var members = db.Household.Members.Select(db.ToMemberDto).ToList();
         var days = new List<DayPlanDto>();
 
         for (var d = 0; d < 7; d++)
         {
-            var date = db.Plan.WeekStartDate.AddDays(d);
-            var meals = db.Plan.Meals
+            var date = plan.WeekStartDate.AddDays(d);
+            var meals = plan.Meals
                 .Where(m => m.Date == date)
                 .OrderBy(m => m.SlotType)
                 .Select(db.ToDto)
@@ -84,7 +102,7 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
 
             var totals = members.Select(member =>
             {
-                var portions = db.Plan.Meals.Where(m => m.Date == date)
+                var portions = plan.Meals.Where(m => m.Date == date)
                     .SelectMany(m => m.Portions).Where(p => p.UserId == member.UserId).ToList();
                 var kcal = portions.Sum(p => p.Kcal);
                 return new DailyTotalDto(member.UserId, kcal,
@@ -95,26 +113,25 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
             days.Add(new DayPlanDto(date.ToString("yyyy-MM-dd"), meals, totals));
         }
 
-        return Task.FromResult<WeekPlanDto?>(new WeekPlanDto(
-            db.Plan.Id, householdId, db.Plan.WeekStartDate.ToString("yyyy-MM-dd"), members, days));
+        return new WeekPlanDto(plan.Id, householdId, plan.WeekStartDate.ToString("yyyy-MM-dd"), members, days);
     }
 
     public Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default)
     {
-        if (planId != db.Plan.Id) return Task.FromResult<PlannedMealDto?>(null);
+        var plan = db.Plans.FirstOrDefault(p => p.Id == planId);
         var recipe = db.Recipes.FirstOrDefault(r => r.Id == request.RecipeId);
-        if (recipe is null) return Task.FromResult<PlannedMealDto?>(null);
+        if (plan is null || recipe is null) return Task.FromResult<PlannedMealDto?>(null);
 
         var eaters = db.Profiles.Where(p => p.IsActive).Select(p => (p.UserId, p.CalorieTarget)).ToList();
-        var meal = Solving.SolvePlannedMeal(db.Plan.Id, DateOnly.Parse(request.Date),
+        var meal = Solving.SolvePlannedMeal(plan.Id, DateOnly.Parse(request.Date),
             Enum.Parse<SlotType>(request.SlotType), recipe, db.IngredientsById, eaters);
-        db.Plan.Meals.Add(meal);
+        plan.Meals.Add(meal);
         return Task.FromResult<PlannedMealDto?>(db.ToDto(meal));
     }
 
     public Task<PlannedMealDto?> SolveMealAsync(Guid plannedMealId, SolveMealRequest request, CancellationToken ct = default)
     {
-        var meal = db.Plan.Meals.FirstOrDefault(m => m.Id == plannedMealId);
+        var meal = db.Plans.SelectMany(p => p.Meals).FirstOrDefault(m => m.Id == plannedMealId);
         if (meal is null) return Task.FromResult<PlannedMealDto?>(null);
 
         var recipe = db.Recipes.First(r => r.Id == meal.RecipeId);
@@ -135,9 +152,10 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
 
     public Task<GroceryListDto?> GetGroceryListAsync(Guid planId, CancellationToken ct = default)
     {
-        if (planId != db.Plan.Id) return Task.FromResult<GroceryListDto?>(null);
+        var plan = db.Plans.FirstOrDefault(p => p.Id == planId);
+        if (plan is null) return Task.FromResult<GroceryListDto?>(null);
 
-        var items = db.Plan.Meals
+        var items = plan.Meals
             .SelectMany(m => m.Portions)
             .SelectMany(p => p.IngredientGrams)
             .GroupBy(kv => kv.Key)
@@ -150,21 +168,25 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
             .ToList();
 
         return Task.FromResult<GroceryListDto?>(
-            new GroceryListDto(planId, db.Plan.WeekStartDate.ToString("yyyy-MM-dd"), items));
+            new GroceryListDto(planId, plan.WeekStartDate.ToString("yyyy-MM-dd"), items));
     }
 
     public Task<ShareLinkDto?> CreateShareLinkAsync(Guid planId, CancellationToken ct = default)
     {
-        if (planId != db.Plan.Id) return Task.FromResult<ShareLinkDto?>(null);
-        db.Plan.ShareToken ??= Guid.NewGuid().ToString("N");
+        var plan = db.Plans.FirstOrDefault(p => p.Id == planId);
+        if (plan is null) return Task.FromResult<ShareLinkDto?>(null);
+        plan.ShareToken ??= Guid.NewGuid().ToString("N");
         return Task.FromResult<ShareLinkDto?>(
-            new ShareLinkDto(db.Plan.ShareToken, $"/api/v1/grocery-lists/{db.Plan.ShareToken}"));
+            new ShareLinkDto(plan.ShareToken, $"/api/v1/grocery-lists/{plan.ShareToken}"));
     }
 
-    public Task<GroceryListDto?> GetGroceryListByTokenAsync(string shareToken, CancellationToken ct = default) =>
-        db.Plan.ShareToken == shareToken
-            ? GetGroceryListAsync(db.Plan.Id, ct)
-            : Task.FromResult<GroceryListDto?>(null);
+    public Task<GroceryListDto?> GetGroceryListByTokenAsync(string shareToken, CancellationToken ct = default)
+    {
+        var plan = db.Plans.FirstOrDefault(p => p.ShareToken == shareToken);
+        return plan is null
+            ? Task.FromResult<GroceryListDto?>(null)
+            : GetGroceryListAsync(plan.Id, ct);
+    }
 }
 
 public class MockRecipeService(MockDb db) : IRecipeService
@@ -236,7 +258,7 @@ public class MockFoodLogService(MockDb db) : IFoodLogService
             : DateTime.Now.Hour < 17 ? SlotType.Dinner
             : SlotType.Snack;
 
-        var remainingMeals = db.Plan.Meals
+        var remainingMeals = db.Plans.SelectMany(p => p.Meals)
             .Where(m => m.Date == date && m.SlotType >= minSlot)
             .SelectMany(m => m.Portions.Where(p => p.UserId == request.UserId)
                 .Select(p => new RemainingMeal(m.Id, db.Recipes.First(r => r.Id == m.RecipeId).Name, m.SlotType.ToString(), p.Kcal)))
@@ -294,7 +316,8 @@ public class MockSuggestionService(MockDb db) : ISuggestionService
         var proposal = JsonSerializer.Deserialize<RecalcProposal>(suggestion.PayloadJson)!;
         foreach (var adjustment in proposal.Adjustments)
         {
-            var portion = db.Plan.Meals.FirstOrDefault(m => m.Id == adjustment.PlannedMealId)?
+            var portion = db.Plans.SelectMany(p => p.Meals)
+                .FirstOrDefault(m => m.Id == adjustment.PlannedMealId)?
                 .Portions.FirstOrDefault(p => p.UserId == suggestion.UserId);
             if (portion is null) continue;
 

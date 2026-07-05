@@ -14,6 +14,9 @@ public interface IMealPlanService
     /// <summary>Weekly calendar with all portions and running totals (the main page).</summary>
     Task<WeekPlanDto?> GetWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default);
 
+    /// <summary>Create an empty plan for a week; returns the existing one if already there.</summary>
+    Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default);
+
     /// <summary>Add a dish to a slot → triggers portion solve for all members.</summary>
     Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default);
 
