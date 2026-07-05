@@ -90,3 +90,57 @@ export interface GroceryListDto {
   weekStartDate: string
   items: GroceryItemDto[]
 }
+
+export interface ShareLinkDto {
+  shareToken: string
+  url: string
+}
+
+// ---- Off-plan logging & recalc ----
+
+export interface LogFoodRequest {
+  userId: string
+  date: string
+  description: string
+  kcal: number
+  proteinG: number
+  carbsG: number
+  fatG: number
+}
+
+export interface FoodLogDto {
+  id: string
+  userId: string
+  date: string
+  source: 'Planned' | 'OffPlan'
+  description: string
+  kcal: number
+  proteinG: number
+  carbsG: number
+  fatG: number
+}
+
+export interface MealAdjustmentDto {
+  plannedMealId: string
+  recipeName: string
+  slotType: string
+  oldKcal: number
+  newKcal: number
+  scale: number
+}
+
+export interface SuggestionDto {
+  id: string
+  userId: string
+  date: string
+  status: 'Pending' | 'Accepted' | 'Dismissed'
+  overageKcal: number
+  absorbedKcal: number
+  unabsorbedKcal: number
+  adjustments: MealAdjustmentDto[]
+}
+
+export interface LogFoodResponse {
+  log: FoodLogDto
+  suggestion: SuggestionDto | null
+}

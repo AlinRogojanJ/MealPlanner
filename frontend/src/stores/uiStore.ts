@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 // UI state only — server data lives in TanStack Query (Tech Design §7.2).
 
-export type Tab = 'calendar' | 'recipes' | 'grocery'
+export type Tab = 'calendar' | 'recipes' | 'grocery' | 'logging'
 
 interface UiState {
   selectedWeek: string // ISO date of the week's Monday

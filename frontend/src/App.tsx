@@ -1,12 +1,14 @@
 import { WeekView } from './features/calendar/WeekView'
 import { RecipesPage } from './features/recipes/RecipesPage'
 import { GroceryPage } from './features/grocery/GroceryPage'
+import { LoggingPage } from './features/logging/LoggingPage'
 import { useUiStore, type Tab } from './stores/uiStore'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'calendar', label: 'Calendar' },
   { id: 'recipes', label: 'Recipes' },
   { id: 'grocery', label: 'Grocery list' },
+  { id: 'logging', label: 'Log food' },
 ]
 
 function App() {
@@ -40,9 +42,6 @@ function App() {
                 {tab.label}
               </button>
             ))}
-            <span className="cursor-not-allowed rounded-lg px-3 py-1.5 text-slate-400" title="Coming soon">
-              Log food
-            </span>
           </nav>
         </div>
       </header>
@@ -50,6 +49,7 @@ function App() {
         {activeTab === 'calendar' && <WeekView />}
         {activeTab === 'recipes' && <RecipesPage />}
         {activeTab === 'grocery' && <GroceryPage />}
+        {activeTab === 'logging' && <LoggingPage />}
       </main>
     </div>
   )

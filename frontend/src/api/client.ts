@@ -1,10 +1,29 @@
-import type { GroceryListDto, HouseholdDto, RecipeDto, WeekPlanDto } from './types'
+import type {
+  FoodLogDto,
+  GroceryListDto,
+  HouseholdDto,
+  LogFoodRequest,
+  LogFoodResponse,
+  RecipeDto,
+  SuggestionDto,
+  WeekPlanDto,
+} from './types'
 import mockWeekPlan from '../mocks/week-plan.json'
 import mockHousehold from '../mocks/household.json'
 import mockRecipes from '../mocks/recipes.json'
 
 // Demo household seeded by the backend mock store.
 export const DEMO_HOUSEHOLD_ID = '11111111-1111-1111-1111-111111111111'
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return (await res.json()) as T
+}
 
 async function get<T>(path: string, fallback: T): Promise<T> {
   try {
@@ -32,4 +51,18 @@ export const api = {
 
   getGroceryList: (planId: string) =>
     get<GroceryListDto | null>(`/api/v1/plans/${planId}/grocery-list`, null),
+
+  // ---- Off-plan logging & recalc (writes need the API running — no mock fallback) ----
+
+  logFood: (request: LogFoodRequest) => post<LogFoodResponse>('/api/v1/logs', request),
+
+  getLogsForDay: (userId: string, date: string) =>
+    get<FoodLogDto[]>(`/api/v1/logs?userId=${userId}&date=${date}`, []),
+
+  getPendingSuggestions: (userId: string) =>
+    get<SuggestionDto[]>(`/api/v1/suggestions?userId=${userId}`, []),
+
+  acceptSuggestion: (id: string) => post<SuggestionDto>(`/api/v1/suggestions/${id}/accept`, {}),
+
+  dismissSuggestion: (id: string) => post<SuggestionDto>(`/api/v1/suggestions/${id}/dismiss`, {}),
 }
