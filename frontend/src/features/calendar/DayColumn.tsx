@@ -7,10 +7,11 @@ import { MealCard } from './MealCard'
 interface DayColumnProps {
   day: DayPlanDto
   members: MemberDto[]
+  onAddMeal: (date: string) => void
 }
 
 /** One weekday: header, running totals per person, and the day's meal cards. */
-export function DayColumn({ day, members }: DayColumnProps) {
+export function DayColumn({ day, members, onAddMeal }: DayColumnProps) {
   const { weekday, date } = formatDayHeader(day.date)
   const today = isToday(day.date)
 
@@ -50,6 +51,12 @@ export function DayColumn({ day, members }: DayColumnProps) {
         {day.meals.map((meal) => (
           <MealCard key={meal.id} meal={meal} members={members} />
         ))}
+        <button
+          onClick={() => onAddMeal(day.date)}
+          className="rounded-lg border border-dashed border-slate-300 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:border-indigo-300 hover:text-indigo-500"
+        >
+          + Add dish
+        </button>
       </div>
     </div>
   )

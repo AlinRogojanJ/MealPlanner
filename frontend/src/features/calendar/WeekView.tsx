@@ -1,11 +1,14 @@
+import { useState } from 'react'
 import { useWeekPlan } from './useWeekPlan'
 import { formatWeekRange } from '../../lib/dates'
 import { memberColor } from '../../lib/memberColors'
 import { DayColumn } from './DayColumn'
+import { AddMealModal } from './AddMealModal'
 
 /** The main page: weekly calendar with per-person portions and running totals. */
 export function WeekView() {
   const { data: plan, isLoading } = useWeekPlan()
+  const [addMealDate, setAddMealDate] = useState<string>()
 
   if (isLoading) {
     return <div className="p-10 text-center text-slate-400">Loading week…</div>
@@ -42,9 +45,13 @@ export function WeekView() {
 
       <div className="flex gap-3 overflow-x-auto pb-4">
         {plan.days.map((day) => (
-          <DayColumn key={day.date} day={day} members={plan.members} />
+          <DayColumn key={day.date} day={day} members={plan.members} onAddMeal={setAddMealDate} />
         ))}
       </div>
+
+      {addMealDate && (
+        <AddMealModal planId={plan.planId} date={addMealDate} onClose={() => setAddMealDate(undefined)} />
+      )}
     </div>
   )
 }

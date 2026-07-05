@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '../../api/client'
 import type { GroceryItemDto } from '../../api/types'
 import { formatWeekRange } from '../../lib/dates'
 import { useGroceryList } from './useGroceryList'
@@ -26,6 +28,17 @@ export function GroceryPage() {
   const { data: list, isLoading } = useGroceryList()
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+
+  // v1 phone export: anonymous capability URL, copied to clipboard (§5.5).
+  const share = useMutation({
+    mutationFn: () => api.createShareLink(list!.planId),
+    onSuccess: async (link) => {
+      await navigator.clipboard.writeText(`${window.location.origin}${link.url}`)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2500)
+    },
+  })
 
   const aisles = useMemo(() => {
     if (!list) return []
@@ -67,6 +80,14 @@ export function GroceryPage() {
           </p>
         </div>
         <div className="flex gap-2 print:hidden">
+          <button
+            onClick={() => share.mutate()}
+            disabled={share.isPending}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title="Anonymous read-only link — anyone with it can view this list"
+          >
+            {shareCopied ? 'Link copied ✓' : 'Share link'}
+          </button>
           <button
             onClick={copyList}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"

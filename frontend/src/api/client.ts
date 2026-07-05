@@ -4,7 +4,9 @@ import type {
   HouseholdDto,
   LogFoodRequest,
   LogFoodResponse,
+  PlannedMealDto,
   RecipeDto,
+  ShareLinkDto,
   SuggestionDto,
   WeekPlanDto,
 } from './types'
@@ -51,6 +53,14 @@ export const api = {
 
   getGroceryList: (planId: string) =>
     get<GroceryListDto | null>(`/api/v1/plans/${planId}/grocery-list`, null),
+
+  // ---- Planning writes (need the API running — no mock fallback) ----
+
+  addMeal: (planId: string, request: { date: string; slotType: string; recipeId: string }) =>
+    post<PlannedMealDto>(`/api/v1/plans/${planId}/meals`, request),
+
+  createShareLink: (planId: string) =>
+    post<ShareLinkDto>(`/api/v1/plans/${planId}/grocery-list/share`, {}),
 
   // ---- Off-plan logging & recalc (writes need the API running — no mock fallback) ----
 
