@@ -132,7 +132,14 @@ export function WeekView() {
 
       <div className="flex gap-3 overflow-x-auto pb-4">
         {plan.days.map((day) => (
-          <DayColumn key={day.date} day={day} members={plan.members} onAddMeal={setAddMealDate} />
+          <DayColumn
+            key={day.date}
+            day={day}
+            members={plan.members}
+            planId={plan.planId}
+            weekDates={plan.days.map((d) => d.date)}
+            onAddMeal={setAddMealDate}
+          />
         ))}
       </div>
 

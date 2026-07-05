@@ -36,7 +36,8 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task DemoWeekPlan_ReturnsSevenDaysWithPortionsAndTotals()
     {
-        var response = await Client().GetAsync($"/api/v1/households/{HouseholdId}/plans?week={DemoWeek}");
+        var client = await AuthedClientAsync();
+        var response = await client.GetAsync($"/api/v1/households/{HouseholdId}/plans?week={DemoWeek}");
         response.EnsureSuccessStatusCode();
 
         var plan = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -50,8 +51,32 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task UnknownWeek_Returns404()
     {
-        var response = await Client().GetAsync($"/api/v1/households/{HouseholdId}/plans?week=2030-01-06");
+        var client = await AuthedClientAsync();
+        var response = await client.GetAsync($"/api/v1/households/{HouseholdId}/plans?week=2030-01-06");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WeekPlanWithoutToken_Returns401()
+    {
+        var response = await Client().GetAsync($"/api/v1/households/{HouseholdId}/plans?week={DemoWeek}");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ForeignHousehold_Returns403()
+    {
+        var client = await AuthedClientAsync();
+        var response = await client.GetAsync($"/api/v1/households/{Guid.NewGuid()}/plans?week={DemoWeek}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task StrangersLogs_Returns403()
+    {
+        var client = await AuthedClientAsync();
+        var response = await client.GetAsync($"/api/v1/logs?userId={Guid.NewGuid()}&date={DemoWeek}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -152,6 +177,50 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
         var totalMeals = plan.GetProperty("days").EnumerateArray()
             .Sum(d => d.GetProperty("meals").GetArrayLength());
         Assert.True(totalMeals >= 21); // demo week has 3-4 meals every day
+    }
+
+    [Fact]
+    public async Task CopyDay_ReplacesTargetDayWithSourceMenu()
+    {
+        var client = await AuthedClientAsync();
+
+        var week = await client.GetFromJsonAsync<JsonElement>($"/api/v1/households/{HouseholdId}/plans?week={DemoWeek}");
+        var planId = week.GetProperty("planId").GetString();
+        var mondayMeals = week.GetProperty("days")[0].GetProperty("meals").GetArrayLength();
+
+        var copy = await client.PostAsJsonAsync($"/api/v1/plans/{planId}/copy-day", new
+        {
+            fromDate = DemoWeek,      // Monday
+            toDate = "2026-07-04",    // Saturday (has a different menu)
+        });
+        copy.EnsureSuccessStatusCode();
+
+        var updated = await copy.Content.ReadFromJsonAsync<JsonElement>();
+        var saturday = updated.GetProperty("days")[5].GetProperty("meals");
+        Assert.Equal(mondayMeals, saturday.GetArrayLength());
+        Assert.True(saturday[0].GetProperty("portions").GetArrayLength() > 0);
+
+        var mondayRecipes = updated.GetProperty("days")[0].GetProperty("meals").EnumerateArray()
+            .Select(m => m.GetProperty("recipeName").GetString()).OrderBy(n => n).ToList();
+        var saturdayRecipes = saturday.EnumerateArray()
+            .Select(m => m.GetProperty("recipeName").GetString()).OrderBy(n => n).ToList();
+        Assert.Equal(mondayRecipes, saturdayRecipes);
+    }
+
+    [Fact]
+    public async Task CopyDay_OutsideWeek_Returns404()
+    {
+        var client = await AuthedClientAsync();
+
+        var week = await client.GetFromJsonAsync<JsonElement>($"/api/v1/households/{HouseholdId}/plans?week={DemoWeek}");
+        var planId = week.GetProperty("planId").GetString();
+
+        var copy = await client.PostAsJsonAsync($"/api/v1/plans/{planId}/copy-day", new
+        {
+            fromDate = DemoWeek,
+            toDate = "2026-07-20", // not in this plan's week
+        });
+        Assert.Equal(HttpStatusCode.NotFound, copy.StatusCode);
     }
 
     [Fact]

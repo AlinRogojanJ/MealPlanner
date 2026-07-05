@@ -4,20 +4,22 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MacroSync.Api.Controllers;
 
+[Authorize]
 [Route("api/v1/households")]
-public class HouseholdsController(IHouseholdService households, IMealPlanService plans) : ApiControllerBase
+public class HouseholdsController(IHouseholdService households, IMealPlanService plans, IMembershipService membership) : ApiControllerBase
 {
     public record JoinRequest(string InviteCode, Guid UserId);
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<HouseholdDto>> Get(Guid id, CancellationToken ct)
     {
+        if (await DenyUnlessMemberAsync(membership, id, ct) is { } denied) return denied;
+
         var household = await households.GetAsync(id, ct);
         return household is null ? NotFound() : Ok(household);
     }
 
-    /// <summary>Invite/join via invite code.</summary>
-    [Authorize]
+    /// <summary>Invite/join via invite code — the code itself is the capability, so no membership check.</summary>
     [HttpPost("{id:guid}/members")]
     public async Task<ActionResult<HouseholdDto>> Join(Guid id, JoinRequest request, CancellationToken ct)
     {
@@ -32,7 +34,6 @@ public class HouseholdsController(IHouseholdService households, IMealPlanService
 
     /// <summary>Create a plan for a week (idempotent). Optionally copy another week's menu,
     /// re-solved against current targets (save-week-as-template §5.2).</summary>
-    [Authorize]
     [HttpPost("{id:guid}/plans")]
     public async Task<ActionResult<WeekPlanDto>> CreateWeekPlan(Guid id, CreatePlanRequest request, CancellationToken ct)
     {
@@ -47,6 +48,8 @@ public class HouseholdsController(IHouseholdService households, IMealPlanService
             copyFrom = parsed;
         }
 
+        if (await DenyUnlessMemberAsync(membership, id, ct) is { } denied) return denied;
+
         var plan = await plans.CreateWeekPlanAsync(id, weekStart, copyFrom, ct);
         return plan is null ? NotFound() : Ok(plan);
     }
@@ -55,6 +58,8 @@ public class HouseholdsController(IHouseholdService households, IMealPlanService
     [HttpGet("{id:guid}/plans")]
     public async Task<ActionResult<WeekPlanDto>> GetWeekPlan(Guid id, [FromQuery] string? week, CancellationToken ct)
     {
+        if (await DenyUnlessMemberAsync(membership, id, ct) is { } denied) return denied;
+
         var weekStart = week is not null && DateOnly.TryParse(week, out var parsed)
             ? parsed
             : DateOnly.FromDateTime(DateTime.UtcNow); // v0 mock ignores it anyway

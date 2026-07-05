@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FluentValidation;
+using MacroSync.Application;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MacroSync.Api.Controllers;
@@ -23,5 +24,26 @@ public abstract class ApiControllerBase : ControllerBase
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(claim, out var id) ? id : fallback;
+    }
+
+    /// <summary>Household-membership policy (§5.2): 401 without a user, 403 when the caller
+    /// isn't a member of the household owning the resource; null when access is allowed.</summary>
+    protected async Task<ActionResult?> DenyUnlessMemberAsync(
+        IMembershipService membership, Guid householdId, CancellationToken ct)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        return await membership.IsMemberAsync(userId.Value, householdId, ct) ? null : Forbid();
+    }
+
+    /// <summary>Same policy for user-scoped resources (logs, suggestions): the caller must share
+    /// a household with the target user — partners see each other's data, strangers don't.</summary>
+    protected async Task<ActionResult?> DenyUnlessSameHouseholdAsync(
+        IMembershipService membership, Guid targetUserId, CancellationToken ct)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        if (userId.Value == targetUserId) return null;
+        return await membership.ShareHouseholdAsync(userId.Value, targetUserId, ct) ? null : Forbid();
     }
 }

@@ -10,24 +10,34 @@ import { MealCard } from './MealCard'
 interface DayColumnProps {
   day: DayPlanDto
   members: MemberDto[]
+  planId: string
+  weekDates: string[]
   onAddMeal: (date: string) => void
 }
 
 /** One weekday: header, running totals per person, and the day's meal cards.
  *  Accepts meal cards dragged from other days (keeps the slot, re-solves portions). */
-export function DayColumn({ day, members, onAddMeal }: DayColumnProps) {
+export function DayColumn({ day, members, planId, weekDates, onAddMeal }: DayColumnProps) {
   const { weekday, date } = formatDayHeader(day.date)
   const today = isToday(day.date)
   const [dragOver, setDragOver] = useState(false)
+  const [copyMenuOpen, setCopyMenuOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  const invalidatePlans = () => {
+    queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] })
+    queryClient.invalidateQueries({ queryKey: ['plans'] })
+  }
 
   const move = useMutation({
     mutationFn: ({ mealId, slotType }: { mealId: string; slotType: string }) =>
       api.moveMeal(mealId, day.date, slotType),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] })
-      queryClient.invalidateQueries({ queryKey: ['plans'] })
-    },
+    onSuccess: invalidatePlans,
+  })
+
+  const copyDay = useMutation({
+    mutationFn: (toDate: string) => api.copyDay(planId, day.date, toDate),
+    onSuccess: invalidatePlans,
   })
 
   return (
@@ -59,6 +69,40 @@ export function DayColumn({ day, members, onAddMeal }: DayColumnProps) {
         <span className={`text-sm font-bold ${today ? 'text-indigo-700' : 'text-slate-700'}`}>{weekday}</span>
         <span className="text-xs text-slate-400">{date}</span>
         {today && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">Today</span>}
+        <div className="relative">
+          <button
+            onClick={() => setCopyMenuOpen((open) => !open)}
+            disabled={day.meals.length === 0 || copyDay.isPending}
+            title="Copy this day's menu to another day"
+            className="rounded px-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600 disabled:opacity-40"
+          >
+            ⧉
+          </button>
+          {copyMenuOpen && (
+            <div className="absolute right-0 top-6 z-10 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Copy to… (replaces)
+              </p>
+              {weekDates
+                .filter((d) => d !== day.date)
+                .map((d) => {
+                  const target = formatDayHeader(d)
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => {
+                        setCopyMenuOpen(false)
+                        copyDay.mutate(d)
+                      }}
+                      className="block w-full px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
+                    >
+                      {target.weekday} <span className="text-slate-400">{target.date}</span>
+                    </button>
+                  )
+                })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Running daily totals vs target, with over/under indicator */}

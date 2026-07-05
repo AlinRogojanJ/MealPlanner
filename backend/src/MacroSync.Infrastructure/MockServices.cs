@@ -62,6 +62,26 @@ public class MockHouseholdService(MockDb db) : IHouseholdService
     }
 }
 
+public class MockMembershipService(MockDb db) : IMembershipService
+{
+    public Task<bool> IsMemberAsync(Guid userId, Guid householdId, CancellationToken ct = default) =>
+        Task.FromResult(householdId == db.Household.Id && db.Household.Members.Any(m => m.UserId == userId));
+
+    public Task<bool> ShareHouseholdAsync(Guid userId, Guid otherUserId, CancellationToken ct = default) =>
+        Task.FromResult(db.Household.Members.Any(m => m.UserId == userId)
+            && db.Household.Members.Any(m => m.UserId == otherUserId));
+
+    public Task<Guid?> GetHouseholdIdForPlanAsync(Guid planId, CancellationToken ct = default) =>
+        Task.FromResult(db.Plans.FirstOrDefault(p => p.Id == planId) is { } plan ? (Guid?)plan.HouseholdId : null);
+
+    public Task<Guid?> GetHouseholdIdForMealAsync(Guid plannedMealId, CancellationToken ct = default) =>
+        Task.FromResult(db.Plans.FirstOrDefault(p => p.Meals.Any(m => m.Id == plannedMealId)) is { } plan
+            ? (Guid?)plan.HouseholdId : null);
+
+    public Task<Guid?> GetSuggestionOwnerAsync(Guid suggestionId, CancellationToken ct = default) =>
+        Task.FromResult(db.Suggestions.FirstOrDefault(s => s.Id == suggestionId) is { } s ? (Guid?)s.UserId : null);
+}
+
 public class MockMealPlanService(MockDb db) : IMealPlanService
 {
     public Task<WeekPlanDto?> GetWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
@@ -163,6 +183,28 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
 
         return new WeekPlanDto(plan.Id, householdId, plan.WeekStartDate.ToString("yyyy-MM-dd"), members, days);
     }
+
+    public Task<WeekPlanDto?> CopyDayAsync(Guid planId, DateOnly fromDate, DateOnly toDate, CancellationToken ct = default)
+    {
+        var plan = db.Plans.FirstOrDefault(p => p.Id == planId);
+        if (plan is null || !WithinWeek(plan, fromDate) || !WithinWeek(plan, toDate))
+            return Task.FromResult<WeekPlanDto?>(null);
+
+        if (fromDate != toDate)
+        {
+            plan.Meals.RemoveAll(m => m.Date == toDate);
+            var eaters = db.Profiles.Where(p => p.IsActive).Select(p => (p.UserId, p.CalorieTarget)).ToList();
+            foreach (var sourceMeal in plan.Meals.Where(m => m.Date == fromDate).ToList())
+            {
+                var recipe = db.Recipes.First(r => r.Id == sourceMeal.RecipeId);
+                plan.Meals.Add(Solving.SolvePlannedMeal(plan.Id, toDate, sourceMeal.SlotType, recipe, db.IngredientsById, eaters));
+            }
+        }
+        return Task.FromResult<WeekPlanDto?>(BuildWeekDto(plan, plan.HouseholdId));
+    }
+
+    private static bool WithinWeek(MealPlan plan, DateOnly date) =>
+        date >= plan.WeekStartDate && date < plan.WeekStartDate.AddDays(7);
 
     public Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default)
     {

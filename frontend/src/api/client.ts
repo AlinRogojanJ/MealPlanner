@@ -92,6 +92,9 @@ export const api = {
   createWeekPlan: (householdId: string, weekStartDate: string, copyFromWeekStartDate?: string) =>
     post<WeekPlanDto>(`/api/v1/households/${householdId}/plans`, { weekStartDate, copyFromWeekStartDate }),
 
+  copyDay: (planId: string, fromDate: string, toDate: string) =>
+    post<WeekPlanDto>(`/api/v1/plans/${planId}/copy-day`, { fromDate, toDate }),
+
   moveMeal: (mealId: string, date: string, slotType: string) =>
     post<PlannedMealDto>(`/api/v1/meals/${mealId}/move`, { date, slotType }),
 

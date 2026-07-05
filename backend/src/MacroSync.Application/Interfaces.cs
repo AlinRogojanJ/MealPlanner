@@ -24,6 +24,10 @@ public interface IMealPlanService
     /// <summary>Move a dish to another day/slot within its plan — portions re-solve for the new slot budget.</summary>
     Task<PlannedMealDto?> MoveMealAsync(Guid plannedMealId, DateOnly date, string slotType, CancellationToken ct = default);
 
+    /// <summary>Replace one day's menu with another day's from the same plan, re-solved against
+    /// current targets. Returns the updated week; null when the plan or either date is off-plan.</summary>
+    Task<WeekPlanDto?> CopyDayAsync(Guid planId, DateOnly fromDate, DateOnly toDate, CancellationToken ct = default);
+
     /// <summary>Add a dish to a slot → triggers portion solve for all members.</summary>
     Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default);
 
@@ -64,6 +68,19 @@ public interface IFoodLogService
     Task<LogFoodResponse> LogAsync(LogFoodRequest request, CancellationToken ct = default);
 
     Task<IReadOnlyList<FoodLogDto>> GetForDayAsync(Guid userId, DateOnly date, CancellationToken ct = default);
+}
+
+public interface IMembershipService
+{
+    /// <summary>Household-membership policy source (§5.2) — controllers deny access when these say no.</summary>
+    Task<bool> IsMemberAsync(Guid userId, Guid householdId, CancellationToken ct = default);
+
+    /// <summary>True when both users belong to at least one common household (partner data is shared).</summary>
+    Task<bool> ShareHouseholdAsync(Guid userId, Guid otherUserId, CancellationToken ct = default);
+
+    Task<Guid?> GetHouseholdIdForPlanAsync(Guid planId, CancellationToken ct = default);
+    Task<Guid?> GetHouseholdIdForMealAsync(Guid plannedMealId, CancellationToken ct = default);
+    Task<Guid?> GetSuggestionOwnerAsync(Guid suggestionId, CancellationToken ct = default);
 }
 
 public interface ISuggestionService

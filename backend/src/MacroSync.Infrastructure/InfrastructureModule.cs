@@ -35,6 +35,7 @@ public static class InfrastructureModule
                 o.UseSqlServer(config.GetConnectionString("MacroSync")
                     ?? throw new InvalidOperationException("ConnectionStrings:MacroSync is not configured.")));
 
+            services.AddScoped<IMembershipService, SqlMembershipService>();
             services.AddScoped<IHouseholdService, SqlHouseholdService>();
             services.AddScoped<IMealPlanService, SqlMealPlanService>();
             services.AddScoped<IRecipeService, SqlRecipeService>();
@@ -50,6 +51,7 @@ public static class InfrastructureModule
         else
         {
             services.AddSingleton<MockDb>();
+            services.AddSingleton<IMembershipService, MockMembershipService>();
             services.AddSingleton<IHouseholdService, MockHouseholdService>();
             services.AddSingleton<IMealPlanService, MockMealPlanService>();
             services.AddSingleton<IRecipeService, MockRecipeService>();

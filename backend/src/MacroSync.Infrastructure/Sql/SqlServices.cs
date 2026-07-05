@@ -40,6 +40,40 @@ internal static class SqlMapping
     }
 }
 
+public class SqlMembershipService(MacroSyncDbContext db) : IMembershipService
+{
+    public Task<bool> IsMemberAsync(Guid userId, Guid householdId, CancellationToken ct = default) =>
+        db.HouseholdMembers.AnyAsync(m => m.HouseholdId == householdId && m.UserId == userId, ct);
+
+    public Task<bool> ShareHouseholdAsync(Guid userId, Guid otherUserId, CancellationToken ct = default) =>
+        db.HouseholdMembers
+            .Where(m => m.UserId == userId)
+            .Join(db.HouseholdMembers.Where(m => m.UserId == otherUserId),
+                a => a.HouseholdId, b => b.HouseholdId, (a, b) => a)
+            .AnyAsync(ct);
+
+    public async Task<Guid?> GetHouseholdIdForPlanAsync(Guid planId, CancellationToken ct = default)
+    {
+        var ids = await db.MealPlans.Where(p => p.Id == planId).Select(p => p.HouseholdId).ToListAsync(ct);
+        return ids.Count == 0 ? null : ids[0];
+    }
+
+    public async Task<Guid?> GetHouseholdIdForMealAsync(Guid plannedMealId, CancellationToken ct = default)
+    {
+        var ids = await db.PlannedMeals
+            .Where(m => m.Id == plannedMealId)
+            .Join(db.MealPlans, m => m.MealPlanId, p => p.Id, (m, p) => p.HouseholdId)
+            .ToListAsync(ct);
+        return ids.Count == 0 ? null : ids[0];
+    }
+
+    public async Task<Guid?> GetSuggestionOwnerAsync(Guid suggestionId, CancellationToken ct = default)
+    {
+        var ids = await db.RecalcSuggestions.Where(s => s.Id == suggestionId).Select(s => s.UserId).ToListAsync(ct);
+        return ids.Count == 0 ? null : ids[0];
+    }
+}
+
 public class SqlHouseholdService(MacroSyncDbContext db) : IHouseholdService
 {
     public async Task<HouseholdDto?> GetAsync(Guid householdId, CancellationToken ct = default)
@@ -239,6 +273,43 @@ public class SqlMealPlanService(MacroSyncDbContext db) : IMealPlanService
         }
         await db.SaveChangesAsync(ct);
         return SqlMapping.ToDto(meal, recipe.Name, ingredients);
+    }
+
+    public async Task<WeekPlanDto?> CopyDayAsync(Guid planId, DateOnly fromDate, DateOnly toDate, CancellationToken ct = default)
+    {
+        var plan = await db.MealPlans.Include(p => p.Meals).ThenInclude(m => m.Portions)
+            .FirstOrDefaultAsync(p => p.Id == planId, ct);
+        if (plan is null
+            || fromDate < plan.WeekStartDate || fromDate >= plan.WeekStartDate.AddDays(7)
+            || toDate < plan.WeekStartDate || toDate >= plan.WeekStartDate.AddDays(7))
+            return null;
+
+        if (fromDate != toDate)
+        {
+            foreach (var meal in plan.Meals.Where(m => m.Date == toDate).ToList())
+            {
+                db.MealPortions.RemoveRange(meal.Portions);
+                db.PlannedMeals.Remove(meal);
+            }
+
+            var ingredients = await db.Ingredients.AsNoTracking().ToDictionaryAsync(i => i.Id, ct);
+            var sourceMeals = plan.Meals.Where(m => m.Date == fromDate).ToList();
+            var recipeIds = sourceMeals.Select(m => m.RecipeId).Distinct().ToList();
+            var recipes = await db.Recipes.AsNoTracking().Include(r => r.Ingredients)
+                .Where(r => recipeIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+            var eaters = await db.HouseholdMembers.Where(m => m.HouseholdId == plan.HouseholdId)
+                .Join(db.NutritionProfiles.Where(p => p.IsActive), m => m.UserId, p => p.UserId,
+                    (m, p) => new { m.UserId, p.CalorieTarget })
+                .ToListAsync(ct);
+            var eaterList = eaters.Select(e => (e.UserId, e.CalorieTarget)).ToList();
+
+            foreach (var sourceMeal in sourceMeals)
+                db.PlannedMeals.Add(Solving.SolvePlannedMeal(
+                    plan.Id, toDate, sourceMeal.SlotType, recipes[sourceMeal.RecipeId], ingredients, eaterList));
+
+            await db.SaveChangesAsync(ct);
+        }
+        return await GetWeekPlanAsync(plan.HouseholdId, plan.WeekStartDate, ct);
     }
 
     public async Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default)
