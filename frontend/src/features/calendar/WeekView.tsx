@@ -22,7 +22,7 @@ export function WeekView() {
   const queryClient = useQueryClient()
 
   const createWeek = useMutation({
-    mutationFn: () => api.createWeekPlan(DEMO_HOUSEHOLD_ID, selectedWeek),
+    mutationFn: (copyFrom?: string) => api.createWeekPlan(DEMO_HOUSEHOLD_ID, selectedWeek, copyFrom),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] }),
   })
@@ -69,13 +69,23 @@ export function WeekView() {
         </div>
         <div className="rounded-xl border border-dashed border-slate-300 p-16 text-center">
           <p className="mb-4 text-sm text-slate-400">No plan for this week yet.</p>
-          <button
-            onClick={() => createWeek.mutate()}
-            disabled={createWeek.isPending}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {createWeek.isPending ? 'Creating…' : 'Start planning this week'}
-          </button>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => createWeek.mutate(undefined)}
+              disabled={createWeek.isPending}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {createWeek.isPending ? 'Creating…' : 'Start from scratch'}
+            </button>
+            <button
+              onClick={() => createWeek.mutate(shiftWeek(selectedWeek, -1))}
+              disabled={createWeek.isPending}
+              title="Copy last week's menu, re-solved against current targets"
+              className="rounded-lg border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
+            >
+              Copy previous week
+            </button>
+          </div>
           {createWeek.isError && (
             <p className="mt-3 text-xs text-red-600">
               Couldn't create — is the API running? ({String(createWeek.error)})

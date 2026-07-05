@@ -1,5 +1,6 @@
 using FluentValidation;
 using MacroSync.Application;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MacroSync.Api.Controllers;
@@ -8,6 +9,7 @@ namespace MacroSync.Api.Controllers;
 public class PlansController(IMealPlanService plans) : ApiControllerBase
 {
     /// <summary>Add dish to a slot → triggers portion solve for all members.</summary>
+    [Authorize]
     [HttpPost("{planId:guid}/meals")]
     public async Task<ActionResult<PlannedMealDto>> AddMeal(
         Guid planId, AddMealRequest request, IValidator<AddMealRequest> validator, CancellationToken ct)
@@ -25,6 +27,7 @@ public class PlansController(IMealPlanService plans) : ApiControllerBase
     }
 
     /// <summary>Create (or return) the anonymous share link for the plan's grocery list.</summary>
+    [Authorize]
     [HttpPost("{planId:guid}/grocery-list/share")]
     public async Task<ActionResult<ShareLinkDto>> CreateShareLink(Guid planId, CancellationToken ct)
     {

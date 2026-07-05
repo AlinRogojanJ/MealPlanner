@@ -1,9 +1,11 @@
 using FluentValidation;
 using MacroSync.Application;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MacroSync.Api.Controllers;
 
+[Authorize]
 [Route("api/v1/logs")]
 public class LogsController(IFoodLogService logs) : ApiControllerBase
 {

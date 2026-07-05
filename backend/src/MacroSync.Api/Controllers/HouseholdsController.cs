@@ -1,4 +1,5 @@
 using MacroSync.Application;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MacroSync.Api.Controllers;
@@ -16,6 +17,7 @@ public class HouseholdsController(IHouseholdService households, IMealPlanService
     }
 
     /// <summary>Invite/join via invite code.</summary>
+    [Authorize]
     [HttpPost("{id:guid}/members")]
     public async Task<ActionResult<HouseholdDto>> Join(Guid id, JoinRequest request, CancellationToken ct)
     {
@@ -26,16 +28,26 @@ public class HouseholdsController(IHouseholdService households, IMealPlanService
         return household is null ? NotFound() : Ok(household);
     }
 
-    public record CreatePlanRequest(string WeekStartDate);
+    public record CreatePlanRequest(string WeekStartDate, string? CopyFromWeekStartDate = null);
 
-    /// <summary>Create an empty plan for a week (idempotent — returns the existing one).</summary>
+    /// <summary>Create a plan for a week (idempotent). Optionally copy another week's menu,
+    /// re-solved against current targets (save-week-as-template §5.2).</summary>
+    [Authorize]
     [HttpPost("{id:guid}/plans")]
     public async Task<ActionResult<WeekPlanDto>> CreateWeekPlan(Guid id, CreatePlanRequest request, CancellationToken ct)
     {
         if (!DateOnly.TryParse(request.WeekStartDate, out var weekStart))
             return BadRequest(new ProblemDetails { Title = "weekStartDate must be a valid yyyy-MM-dd date." });
 
-        var plan = await plans.CreateWeekPlanAsync(id, weekStart, ct);
+        DateOnly? copyFrom = null;
+        if (request.CopyFromWeekStartDate is not null)
+        {
+            if (!DateOnly.TryParse(request.CopyFromWeekStartDate, out var parsed))
+                return BadRequest(new ProblemDetails { Title = "copyFromWeekStartDate must be a valid yyyy-MM-dd date." });
+            copyFrom = parsed;
+        }
+
+        var plan = await plans.CreateWeekPlanAsync(id, weekStart, copyFrom, ct);
         return plan is null ? NotFound() : Ok(plan);
     }
 

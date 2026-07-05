@@ -153,7 +153,7 @@ public class SqlMealPlanService(MacroSyncDbContext db) : IMealPlanService
         return new WeekPlanDto(plan.Id, householdId, plan.WeekStartDate.ToString("yyyy-MM-dd"), members, days);
     }
 
-    public async Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
+    public async Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, DateOnly? copyFrom = null, CancellationToken ct = default)
     {
         var exists = await db.Households.AnyAsync(h => h.Id == householdId, ct);
         if (!exists) return null;
@@ -164,9 +164,80 @@ public class SqlMealPlanService(MacroSyncDbContext db) : IMealPlanService
         {
             plan = new MealPlan { Id = Guid.NewGuid(), HouseholdId = householdId, WeekStartDate = weekStart };
             db.MealPlans.Add(plan);
+
+            var source = copyFrom is null
+                ? null
+                : await db.MealPlans.AsNoTracking().Include(p => p.Meals)
+                    .FirstOrDefaultAsync(p => p.HouseholdId == householdId && p.WeekStartDate == copyFrom, ct);
+            if (source is not null)
+            {
+                // Copy the source week's menu, re-solved against current targets.
+                var ingredients = await db.Ingredients.AsNoTracking().ToDictionaryAsync(i => i.Id, ct);
+                var recipeIds = source.Meals.Select(m => m.RecipeId).Distinct().ToList();
+                var recipes = await db.Recipes.AsNoTracking().Include(r => r.Ingredients)
+                    .Where(r => recipeIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+                var eaters = await db.HouseholdMembers.Where(m => m.HouseholdId == householdId)
+                    .Join(db.NutritionProfiles.Where(p => p.IsActive), m => m.UserId, p => p.UserId,
+                        (m, p) => new { m.UserId, p.CalorieTarget })
+                    .ToListAsync(ct);
+                var eaterList = eaters.Select(e => (e.UserId, e.CalorieTarget)).ToList();
+
+                foreach (var sourceMeal in source.Meals)
+                {
+                    var date = weekStart.AddDays(sourceMeal.Date.DayNumber - source.WeekStartDate.DayNumber);
+                    db.PlannedMeals.Add(Solving.SolvePlannedMeal(
+                        plan.Id, date, sourceMeal.SlotType, recipes[sourceMeal.RecipeId], ingredients, eaterList));
+                }
+            }
             await db.SaveChangesAsync(ct);
         }
         return await GetWeekPlanAsync(householdId, weekStart, ct);
+    }
+
+    public async Task<bool> DeleteMealAsync(Guid plannedMealId, CancellationToken ct = default)
+    {
+        var meal = await db.PlannedMeals.Include(m => m.Portions)
+            .FirstOrDefaultAsync(m => m.Id == plannedMealId, ct);
+        if (meal is null) return false;
+
+        db.MealPortions.RemoveRange(meal.Portions);
+        db.PlannedMeals.Remove(meal);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<PlannedMealDto?> MoveMealAsync(Guid plannedMealId, DateOnly date, string slotType, CancellationToken ct = default)
+    {
+        var meal = await db.PlannedMeals.Include(m => m.Portions)
+            .FirstOrDefaultAsync(m => m.Id == plannedMealId, ct);
+        if (meal is null) return null;
+
+        meal.Date = date;
+        meal.SlotType = Enum.Parse<SlotType>(slotType);
+
+        // Slot budget changed → keep the same eaters, re-solve portions.
+        var plan = await db.MealPlans.AsNoTracking().FirstAsync(p => p.Id == meal.MealPlanId, ct);
+        var recipe = await db.Recipes.AsNoTracking().Include(r => r.Ingredients)
+            .FirstAsync(r => r.Id == meal.RecipeId, ct);
+        var ingredients = await db.Ingredients.AsNoTracking().ToDictionaryAsync(i => i.Id, ct);
+        var currentEaters = meal.Portions.Select(p => p.UserId).ToHashSet();
+        var eaters = await db.HouseholdMembers.Where(m => m.HouseholdId == plan.HouseholdId)
+            .Join(db.NutritionProfiles.Where(p => p.IsActive), m => m.UserId, p => p.UserId,
+                (m, p) => new { m.UserId, p.CalorieTarget })
+            .ToListAsync(ct);
+        var eaterList = eaters.Where(e => currentEaters.Contains(e.UserId))
+            .Select(e => (e.UserId, e.CalorieTarget)).ToList();
+
+        var solved = Solving.SolvePlannedMeal(meal.MealPlanId, date, meal.SlotType, recipe, ingredients, eaterList);
+        db.MealPortions.RemoveRange(meal.Portions);
+        meal.Portions.Clear();
+        foreach (var portion in solved.Portions)
+        {
+            portion.PlannedMealId = meal.Id;
+            meal.Portions.Add(portion);
+        }
+        await db.SaveChangesAsync(ct);
+        return SqlMapping.ToDto(meal, recipe.Name, ingredients);
     }
 
     public async Task<PlannedMealDto?> AddMealAsync(Guid planId, AddMealRequest request, CancellationToken ct = default)

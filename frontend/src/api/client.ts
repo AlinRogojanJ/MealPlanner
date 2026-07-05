@@ -88,8 +88,16 @@ export const api = {
   solveMeal: (mealId: string, skippedUserIds: string[]) =>
     post<PlannedMealDto>(`/api/v1/meals/${mealId}/solve`, { skippedUserIds }),
 
-  createWeekPlan: (householdId: string, weekStartDate: string) =>
-    post<WeekPlanDto>(`/api/v1/households/${householdId}/plans`, { weekStartDate }),
+  createWeekPlan: (householdId: string, weekStartDate: string, copyFromWeekStartDate?: string) =>
+    post<WeekPlanDto>(`/api/v1/households/${householdId}/plans`, { weekStartDate, copyFromWeekStartDate }),
+
+  moveMeal: (mealId: string, date: string, slotType: string) =>
+    post<PlannedMealDto>(`/api/v1/meals/${mealId}/move`, { date, slotType }),
+
+  deleteMeal: async (mealId: string): Promise<void> => {
+    const res = await fetch(`/api/v1/meals/${mealId}`, { method: 'DELETE', headers: authHeaders() })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  },
 
   updateProfile: (
     userId: string,

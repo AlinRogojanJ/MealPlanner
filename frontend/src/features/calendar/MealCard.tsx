@@ -16,15 +16,21 @@ interface MealCardProps {
 }
 
 /** One dish in a calendar slot: recipe name + each person's portion and macros.
- *  Skipping an eater re-solves the dish for whoever's left (edge case §6). */
+ *  Skipping an eater re-solves the dish for whoever's left (edge case §6).
+ *  Drag the card onto another day to move it. */
 export function MealCard({ meal, members }: MealCardProps) {
   const queryClient = useQueryClient()
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] })
+    queryClient.invalidateQueries({ queryKey: ['plans'] }) // grocery list totals change too
+  }
   const solve = useMutation({
     mutationFn: (skippedUserIds: string[]) => api.solveMeal(meal.id, skippedUserIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] })
-      queryClient.invalidateQueries({ queryKey: ['plans'] }) // grocery list totals change too
-    },
+    onSuccess: invalidate,
+  })
+  const remove = useMutation({
+    mutationFn: () => api.deleteMeal(meal.id),
+    onSuccess: invalidate,
   })
 
   const eatingUserIds = meal.portions.map((p) => p.userId)
@@ -33,22 +39,42 @@ export function MealCard({ meal, members }: MealCardProps) {
   const skip = (userId: string) =>
     solve.mutate([...skippedMembers.map((m) => m.userId), userId])
 
+  const busy = solve.isPending || remove.isPending
+
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md ${solve.isPending ? 'opacity-60' : ''}`}>
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/meal-id', meal.id)
+        e.dataTransfer.setData('text/slot-type', meal.slotType)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      className={`group/card cursor-grab rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing ${busy ? 'opacity-60' : ''}`}
+    >
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${SLOT_STYLES[meal.slotType]}`}>
           {meal.slotType}
         </span>
-        {skippedMembers.length > 0 && (
+        <span className="flex items-center gap-1">
+          {skippedMembers.length > 0 && (
+            <button
+              onClick={() => solve.mutate([])}
+              disabled={busy}
+              title="Re-solve portions for everyone"
+              className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-indigo-500 hover:bg-indigo-50"
+            >
+              + everyone
+            </button>
+          )}
           <button
-            onClick={() => solve.mutate([])}
-            disabled={solve.isPending}
-            title="Re-solve portions for everyone"
-            className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-indigo-500 hover:bg-indigo-50"
+            onClick={() => remove.mutate()}
+            disabled={busy}
+            title="Remove this dish"
+            className="hidden rounded px-1 py-0.5 text-[11px] font-bold text-slate-300 hover:bg-red-50 hover:text-red-500 group-hover/card:inline"
           >
-            + everyone
+            ✕
           </button>
-        )}
+        </span>
       </div>
       <p className="mb-2 text-sm font-semibold leading-snug text-slate-800">{meal.recipeName}</p>
       <div className="space-y-1.5">

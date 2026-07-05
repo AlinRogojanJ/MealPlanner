@@ -73,7 +73,7 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
         return Task.FromResult<WeekPlanDto?>(BuildWeekDto(plan, householdId));
     }
 
-    public Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
+    public Task<WeekPlanDto?> CreateWeekPlanAsync(Guid householdId, DateOnly weekStart, DateOnly? copyFrom = null, CancellationToken ct = default)
     {
         if (householdId != db.Household.Id) return Task.FromResult<WeekPlanDto?>(null);
 
@@ -82,8 +82,55 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
         {
             plan = new MealPlan { Id = Guid.NewGuid(), HouseholdId = householdId, WeekStartDate = weekStart };
             db.Plans.Add(plan);
+
+            var source = copyFrom is null ? null : db.Plans.FirstOrDefault(p => p.WeekStartDate == copyFrom);
+            if (source is not null)
+            {
+                // Copy the source week's menu, re-solved against current targets.
+                var eaters = db.Profiles.Where(p => p.IsActive).Select(p => (p.UserId, p.CalorieTarget)).ToList();
+                foreach (var sourceMeal in source.Meals)
+                {
+                    var date = weekStart.AddDays(sourceMeal.Date.DayNumber - source.WeekStartDate.DayNumber);
+                    var recipe = db.Recipes.First(r => r.Id == sourceMeal.RecipeId);
+                    plan.Meals.Add(Solving.SolvePlannedMeal(plan.Id, date, sourceMeal.SlotType, recipe, db.IngredientsById, eaters));
+                }
+            }
         }
         return Task.FromResult<WeekPlanDto?>(BuildWeekDto(plan, householdId));
+    }
+
+    public Task<bool> DeleteMealAsync(Guid plannedMealId, CancellationToken ct = default)
+    {
+        foreach (var plan in db.Plans)
+        {
+            var meal = plan.Meals.FirstOrDefault(m => m.Id == plannedMealId);
+            if (meal is not null) return Task.FromResult(plan.Meals.Remove(meal));
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<PlannedMealDto?> MoveMealAsync(Guid plannedMealId, DateOnly date, string slotType, CancellationToken ct = default)
+    {
+        var meal = db.Plans.SelectMany(p => p.Meals).FirstOrDefault(m => m.Id == plannedMealId);
+        if (meal is null) return Task.FromResult<PlannedMealDto?>(null);
+
+        meal.Date = date;
+        meal.SlotType = Enum.Parse<SlotType>(slotType);
+
+        // Slot budget changed → keep the same eaters, re-solve portions.
+        var currentEaters = meal.Portions.Select(p => p.UserId).ToHashSet();
+        var eaters = db.Profiles.Where(p => p.IsActive && currentEaters.Contains(p.UserId))
+            .Select(p => (p.UserId, p.CalorieTarget)).ToList();
+        var recipe = db.Recipes.First(r => r.Id == meal.RecipeId);
+        var solved = Solving.SolvePlannedMeal(meal.MealPlanId, date, meal.SlotType, recipe, db.IngredientsById, eaters);
+
+        meal.Portions.Clear();
+        foreach (var portion in solved.Portions)
+        {
+            portion.PlannedMealId = meal.Id;
+            meal.Portions.Add(portion);
+        }
+        return Task.FromResult<PlannedMealDto?>(db.ToDto(meal));
     }
 
     private WeekPlanDto BuildWeekDto(MealPlan plan, Guid householdId)

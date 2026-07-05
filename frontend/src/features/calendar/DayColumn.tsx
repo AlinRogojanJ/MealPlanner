@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { api, DEMO_HOUSEHOLD_ID } from '../../api/client'
 import type { DayPlanDto, MemberDto } from '../../api/types'
 import { formatDayHeader, isToday } from '../../lib/dates'
 import { memberColor } from '../../lib/memberColors'
@@ -10,13 +13,48 @@ interface DayColumnProps {
   onAddMeal: (date: string) => void
 }
 
-/** One weekday: header, running totals per person, and the day's meal cards. */
+/** One weekday: header, running totals per person, and the day's meal cards.
+ *  Accepts meal cards dragged from other days (keeps the slot, re-solves portions). */
 export function DayColumn({ day, members, onAddMeal }: DayColumnProps) {
   const { weekday, date } = formatDayHeader(day.date)
   const today = isToday(day.date)
+  const [dragOver, setDragOver] = useState(false)
+  const queryClient = useQueryClient()
+
+  const move = useMutation({
+    mutationFn: ({ mealId, slotType }: { mealId: string; slotType: string }) =>
+      api.moveMeal(mealId, day.date, slotType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] })
+      queryClient.invalidateQueries({ queryKey: ['plans'] })
+    },
+  })
 
   return (
-    <div className={`flex w-64 shrink-0 flex-col rounded-xl border p-2 ${today ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-200 bg-slate-50'}`}>
+    <div
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes('text/meal-id')) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          setDragOver(true)
+        }
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragOver(false)
+        const mealId = e.dataTransfer.getData('text/meal-id')
+        const slotType = e.dataTransfer.getData('text/slot-type') || 'Dinner'
+        if (mealId) move.mutate({ mealId, slotType })
+      }}
+      className={`flex w-64 shrink-0 flex-col rounded-xl border p-2 transition-colors ${
+        dragOver
+          ? 'border-indigo-400 bg-indigo-100/60'
+          : today
+            ? 'border-indigo-300 bg-indigo-50/50'
+            : 'border-slate-200 bg-slate-50'
+      }`}
+    >
       <div className="mb-2 flex items-baseline justify-between px-1">
         <span className={`text-sm font-bold ${today ? 'text-indigo-700' : 'text-slate-700'}`}>{weekday}</span>
         <span className="text-xs text-slate-400">{date}</span>
