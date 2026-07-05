@@ -1,4 +1,6 @@
+import { getAccessToken } from '../stores/authStore'
 import type {
+  AuthResponse,
   FoodLogDto,
   GroceryListDto,
   HouseholdDto,
@@ -17,10 +19,15 @@ import mockRecipes from '../mocks/recipes.json'
 // Demo household seeded by the backend mock store.
 export const DEMO_HOUSEHOLD_ID = '11111111-1111-1111-1111-111111111111'
 
+function authHeaders(): Record<string, string> {
+  const token = getAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
@@ -29,7 +36,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 async function get<T>(path: string, fallback: T): Promise<T> {
   try {
-    const res = await fetch(path)
+    const res = await fetch(path, { headers: authHeaders() })
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     return (await res.json()) as T
   } catch {
@@ -40,11 +47,21 @@ async function get<T>(path: string, fallback: T): Promise<T> {
 }
 
 export const api = {
-  getWeekPlan: (householdId: string, week: string) =>
-    get<WeekPlanDto>(
-      `/api/v1/households/${householdId}/plans?week=${week}`,
-      mockWeekPlan as WeekPlanDto,
-    ),
+  getWeekPlan: async (householdId: string, week: string): Promise<WeekPlanDto | null> => {
+    try {
+      const res = await fetch(`/api/v1/households/${householdId}/plans?week=${week}`, {
+        headers: authHeaders(),
+      })
+      if (res.status === 404) return null // no plan for that week — honest empty state
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return (await res.json()) as WeekPlanDto
+    } catch {
+      // API not running — the snapshot only covers its own demo week.
+      console.warn('[api] falling back to mock week plan')
+      const snapshot = mockWeekPlan as WeekPlanDto
+      return snapshot.weekStartDate === week ? snapshot : null
+    }
+  },
 
   getHousehold: (householdId: string) =>
     get<HouseholdDto>(`/api/v1/households/${householdId}`, mockHousehold as HouseholdDto),
@@ -54,10 +71,21 @@ export const api = {
   getGroceryList: (planId: string) =>
     get<GroceryListDto | null>(`/api/v1/plans/${planId}/grocery-list`, null),
 
+  // ---- Auth ----
+
+  login: (email: string, password: string) =>
+    post<AuthResponse>('/api/v1/auth/login', { email, password }),
+
+  register: (email: string, password: string, displayName: string) =>
+    post<AuthResponse>('/api/v1/auth/register', { email, password, displayName }),
+
   // ---- Planning writes (need the API running — no mock fallback) ----
 
   addMeal: (planId: string, request: { date: string; slotType: string; recipeId: string }) =>
     post<PlannedMealDto>(`/api/v1/plans/${planId}/meals`, request),
+
+  solveMeal: (mealId: string, skippedUserIds: string[]) =>
+    post<PlannedMealDto>(`/api/v1/meals/${mealId}/solve`, { skippedUserIds }),
 
   createShareLink: (planId: string) =>
     post<ShareLinkDto>(`/api/v1/plans/${planId}/grocery-list/share`, {}),

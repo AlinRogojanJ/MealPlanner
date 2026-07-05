@@ -65,8 +65,10 @@ public class MockMealPlanService(MockDb db) : IMealPlanService
 {
     public Task<WeekPlanDto?> GetWeekPlanAsync(Guid householdId, DateOnly weekStart, CancellationToken ct = default)
     {
-        // v0: one seeded plan regardless of the requested week — the shape is what matters.
-        if (householdId != db.Household.Id) return Task.FromResult<WeekPlanDto?>(null);
+        // Only the seeded demo week exists in mock mode; other weeks 404 so the
+        // frontend shows its honest empty state.
+        if (householdId != db.Household.Id || weekStart != db.Plan.WeekStartDate)
+            return Task.FromResult<WeekPlanDto?>(null);
 
         var members = db.Household.Members.Select(db.ToMemberDto).ToList();
         var days = new List<DayPlanDto>();

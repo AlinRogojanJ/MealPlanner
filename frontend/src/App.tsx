@@ -2,6 +2,8 @@ import { WeekView } from './features/calendar/WeekView'
 import { RecipesPage } from './features/recipes/RecipesPage'
 import { GroceryPage } from './features/grocery/GroceryPage'
 import { LoggingPage } from './features/logging/LoggingPage'
+import { LoginPage } from './features/auth/LoginPage'
+import { useAuthStore } from './stores/authStore'
 import { useUiStore, type Tab } from './stores/uiStore'
 
 const TABS: { id: Tab; label: string }[] = [
@@ -14,6 +16,10 @@ const TABS: { id: Tab; label: string }[] = [
 function App() {
   const activeTab = useUiStore((s) => s.activeTab)
   const setActiveTab = useUiStore((s) => s.setActiveTab)
+  const session = useAuthStore((s) => s.session)
+  const signOut = useAuthStore((s) => s.signOut)
+
+  if (!session) return <LoginPage />
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -43,6 +49,17 @@ function App() {
               </button>
             ))}
           </nav>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">
+              Hi, <span className="font-semibold text-slate-700">{session.displayName}</span>
+            </span>
+            <button
+              onClick={signOut}
+              className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">

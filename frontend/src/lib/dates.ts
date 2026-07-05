@@ -10,6 +10,12 @@ export function isToday(isoDate: string): boolean {
   return isoDate === new Date().toISOString().slice(0, 10)
 }
 
+export function shiftWeek(weekStartIso: string, weeks: number): string {
+  const d = new Date(weekStartIso + 'T00:00:00')
+  d.setDate(d.getDate() + weeks * 7)
+  return d.toISOString().slice(0, 10)
+}
+
 export function formatWeekRange(weekStartIso: string): string {
   const start = new Date(weekStartIso + 'T00:00:00')
   const end = new Date(start)

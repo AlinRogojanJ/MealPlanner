@@ -144,3 +144,14 @@ export interface LogFoodResponse {
   log: FoodLogDto
   suggestion: SuggestionDto | null
 }
+
+// ---- Auth ----
+
+export interface AuthResponse {
+  accessToken: string
+  refreshToken: string
+  accessTokenExpiresAtUtc: string
+  userId: string
+  displayName: string
+  email: string
+}

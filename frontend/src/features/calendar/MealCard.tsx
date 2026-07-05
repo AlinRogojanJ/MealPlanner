@@ -1,3 +1,5 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { api, DEMO_HOUSEHOLD_ID } from '../../api/client'
 import type { MemberDto, PlannedMealDto } from '../../api/types'
 import { memberColor } from '../../lib/memberColors'
 
@@ -13,14 +15,40 @@ interface MealCardProps {
   members: MemberDto[]
 }
 
-/** One dish in a calendar slot: recipe name + each person's portion and macros. */
+/** One dish in a calendar slot: recipe name + each person's portion and macros.
+ *  Skipping an eater re-solves the dish for whoever's left (edge case §6). */
 export function MealCard({ meal, members }: MealCardProps) {
+  const queryClient = useQueryClient()
+  const solve = useMutation({
+    mutationFn: (skippedUserIds: string[]) => api.solveMeal(meal.id, skippedUserIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['households', DEMO_HOUSEHOLD_ID, 'plans'] })
+      queryClient.invalidateQueries({ queryKey: ['plans'] }) // grocery list totals change too
+    },
+  })
+
+  const eatingUserIds = meal.portions.map((p) => p.userId)
+  const skippedMembers = members.filter((m) => !eatingUserIds.includes(m.userId))
+
+  const skip = (userId: string) =>
+    solve.mutate([...skippedMembers.map((m) => m.userId), userId])
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md">
+    <div className={`rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md ${solve.isPending ? 'opacity-60' : ''}`}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${SLOT_STYLES[meal.slotType]}`}>
           {meal.slotType}
         </span>
+        {skippedMembers.length > 0 && (
+          <button
+            onClick={() => solve.mutate([])}
+            disabled={solve.isPending}
+            title="Re-solve portions for everyone"
+            className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-indigo-500 hover:bg-indigo-50"
+          >
+            + everyone
+          </button>
+        )}
       </div>
       <p className="mb-2 text-sm font-semibold leading-snug text-slate-800">{meal.recipeName}</p>
       <div className="space-y-1.5">
@@ -29,14 +57,26 @@ export function MealCard({ meal, members }: MealCardProps) {
           const member = members[idx]
           const color = memberColor(idx)
           return (
-            <div key={portion.userId} className={`rounded-md px-2 py-1.5 ${color.chipBg}`}>
+            <div key={portion.userId} className={`group rounded-md px-2 py-1.5 ${color.chipBg}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className={`flex items-center gap-1.5 text-xs font-medium ${color.text}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${color.dot}`} />
                   {member?.displayName ?? '—'}
                 </span>
-                <span className="text-xs font-semibold tabular-nums text-slate-700">
-                  {Math.round(portion.kcal)} kcal
+                <span className="flex items-center gap-1">
+                  <span className="text-xs font-semibold tabular-nums text-slate-700">
+                    {Math.round(portion.kcal)} kcal
+                  </span>
+                  {meal.portions.length > 1 && (
+                    <button
+                      onClick={() => skip(portion.userId)}
+                      disabled={solve.isPending}
+                      title={`${member?.displayName} skips this meal — re-solve for the rest`}
+                      className="hidden rounded px-1 text-[10px] font-bold text-slate-400 hover:bg-white hover:text-red-500 group-hover:inline"
+                    >
+                      skip
+                    </button>
+                  )}
                 </span>
               </div>
               <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{portion.summary}</p>
@@ -46,6 +86,11 @@ export function MealCard({ meal, members }: MealCardProps) {
             </div>
           )
         })}
+        {skippedMembers.map((member) => (
+          <div key={member.userId} className="rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-400">
+            <span className="line-through">{member.displayName}</span> skips this meal
+          </div>
+        ))}
       </div>
     </div>
   )
