@@ -35,7 +35,8 @@ internal static class SqlMapping
         return new SuggestionDto(s.Id, s.UserId, s.Date.ToString("yyyy-MM-dd"), s.Status.ToString(),
             proposal.OverageKcal, proposal.AbsorbedKcal, proposal.UnabsorbedKcal,
             proposal.Adjustments.Select(a => new MealAdjustmentDto(
-                a.PlannedMealId, a.RecipeName, a.SlotType, a.OldKcal, a.NewKcal, a.Scale)).ToList());
+                a.PlannedMealId, a.RecipeName, a.SlotType, a.OldKcal, a.NewKcal, a.Scale)).ToList(),
+            proposal.Source);
     }
 }
 
@@ -337,7 +338,7 @@ public class SqlMealPlanService(MacroSyncDbContext db) : IMealPlanService
     }
 }
 
-public class SqlFoodLogService(MacroSyncDbContext db) : IFoodLogService
+public class SqlFoodLogService(MacroSyncDbContext db, Ai.RecalcPlanner planner) : IFoodLogService
 {
     public async Task<LogFoodResponse> LogAsync(LogFoodRequest request, CancellationToken ct = default)
     {
@@ -356,9 +357,13 @@ public class SqlFoodLogService(MacroSyncDbContext db) : IFoodLogService
         };
         db.FoodLogs.Add(log);
 
-        // Remaining meals today for this user → rules-based proposal (§5.4).
+        // Remaining meals today for this user → AI proposal when available, else rules (§5.4).
         var remainingMeals = await RemainingMealsAsync(request.UserId, date, ct);
-        var proposal = RecalcEngine.Propose(request.Kcal, remainingMeals);
+        var dietType = await db.NutritionProfiles
+            .Where(p => p.UserId == request.UserId && p.IsActive)
+            .Select(p => p.DietType.ToString())
+            .FirstOrDefaultAsync(ct) ?? "Maintain";
+        var proposal = await planner.ProposeAsync(request.Description, request.Kcal, dietType, remainingMeals, ct);
 
         RecalcSuggestion? suggestion = null;
         if (proposal.Adjustments.Count > 0 || proposal.UnabsorbedKcal > 0)
@@ -409,6 +414,36 @@ public class SqlFoodLogService(MacroSyncDbContext db) : IFoodLogService
     private static FoodLogDto ToDto(FoodLog log) => new(
         log.Id, log.UserId, log.Date.ToString("yyyy-MM-dd"), log.Source.ToString(),
         log.Description, log.Kcal, log.ProteinG, log.CarbsG, log.FatG);
+}
+
+public class SqlRecommendationService(MacroSyncDbContext db, IAiAdvisor advisor) : IRecommendationService
+{
+    public async Task<IReadOnlyList<MealRecommendationDto>> RecommendAsync(
+        Guid planId, DateOnly date, string slotType, CancellationToken ct = default)
+    {
+        var plan = await db.MealPlans.AsNoTracking().FirstOrDefaultAsync(p => p.Id == planId, ct);
+        if (plan is null) return [];
+
+        var recipes = await db.Recipes.AsNoTracking().Include(r => r.Ingredients).ToListAsync(ct);
+        var ingredients = await db.Ingredients.AsNoTracking().ToDictionaryAsync(i => i.Id, ct);
+
+        var eaters = await db.HouseholdMembers.Where(m => m.HouseholdId == plan.HouseholdId)
+            .Join(db.Users, m => m.UserId, u => u.Id, (m, u) => new { u.Id, u.DisplayName })
+            .Join(db.NutritionProfiles.Where(p => p.IsActive), x => x.Id, p => p.UserId,
+                (x, p) => new Ai.RecEater(x.Id, x.DisplayName, p.DietType.ToString(), p.CalorieTarget))
+            .ToListAsync(ct);
+
+        // Variety signal: dishes already planned in the two days before this slot.
+        var from = date.AddDays(-2);
+        var recent = await db.PlannedMeals.AsNoTracking()
+            .Where(m => m.MealPlanId == plan.Id && m.Date <= date && m.Date >= from)
+            .Join(db.Recipes, m => m.RecipeId, r => r.Id, (m, r) => r.Name)
+            .Distinct()
+            .ToListAsync(ct);
+
+        return await Ai.RecommendationEngine.RecommendAsync(
+            advisor, slotType, recipes, ingredients, eaters, recent, ct);
+    }
 }
 
 public class SqlSuggestionService(MacroSyncDbContext db) : ISuggestionService

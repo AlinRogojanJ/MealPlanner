@@ -15,8 +15,16 @@ export function SuggestionCard({ suggestion, userId }: SuggestionCardProps) {
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
           Get back on track — {suggestion.date}
+          {suggestion.source === 'AI' && (
+            <span
+              className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700"
+              title="Preference-aware mix proposed by AI, validated by the rules engine"
+            >
+              ✨ AI
+            </span>
+          )}
         </p>
         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
           +{suggestion.overageKcal} kcal over

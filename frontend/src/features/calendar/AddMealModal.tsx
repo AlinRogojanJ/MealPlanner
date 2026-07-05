@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, DEMO_HOUSEHOLD_ID } from '../../api/client'
 import { useRecipes } from '../recipes/useRecipes'
 import { formatDayHeader } from '../../lib/dates'
@@ -12,12 +12,20 @@ interface AddMealModalProps {
   onClose: () => void
 }
 
-/** Pick a recipe + slot → POST /plans/{id}/meals → solver splits portions for everyone. */
+/** Pick a recipe + slot → POST /plans/{id}/meals → solver splits portions for everyone.
+ *  "Suggest for us" ranks dishes that fit everyone's remaining targets (AI when configured). */
 export function AddMealModal({ planId, date, onClose }: AddMealModalProps) {
   const { data: recipes } = useRecipes()
   const [slotType, setSlotType] = useState<(typeof SLOTS)[number]>('Dinner')
   const [recipeId, setRecipeId] = useState<string>()
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const queryClient = useQueryClient()
+
+  const suggestions = useQuery({
+    queryKey: ['plans', planId, 'recommendations', date, slotType],
+    queryFn: () => api.getRecommendations(planId, date, slotType),
+    enabled: showSuggestions,
+  })
 
   const addMeal = useMutation({
     mutationFn: () => api.addMeal(planId, { date, slotType, recipeId: recipeId! }),
@@ -65,8 +73,62 @@ export function AddMealModal({ planId, date, onClose }: AddMealModalProps) {
           ))}
         </div>
 
-        <label className="mb-1 block text-xs font-medium text-slate-500">Recipe</label>
-        <div className="mb-4 max-h-64 space-y-1.5 overflow-y-auto pr-1">
+        <div className="mb-1 flex items-center justify-between">
+          <label className="block text-xs font-medium text-slate-500">Recipe</label>
+          <button
+            onClick={() => setShowSuggestions((s) => !s)}
+            className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+              showSuggestions
+                ? 'bg-violet-100 text-violet-700'
+                : 'bg-violet-50 text-violet-600 hover:bg-violet-100'
+            }`}
+          >
+            ✨ Suggest for us
+          </button>
+        </div>
+
+        {showSuggestions && (
+          <div className="mb-3 space-y-1.5 rounded-xl border border-violet-200 bg-violet-50/50 p-2">
+            {suggestions.isLoading && (
+              <p className="px-2 py-3 text-center text-xs text-slate-400">
+                Finding dishes that fit everyone's targets…
+              </p>
+            )}
+            {suggestions.data?.map((rec) => (
+              <button
+                key={rec.recipeId}
+                onClick={() => setRecipeId(rec.recipeId)}
+                className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                  recipeId === rec.recipeId
+                    ? 'border-violet-400 bg-white'
+                    : 'border-transparent bg-white/70 hover:bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-slate-800">{rec.recipeName}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                      rec.source === 'AI'
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {rec.source === 'AI' ? '✨ AI' : 'best fit'}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{rec.reason}</p>
+                <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">
+                  {rec.portions.map((p) => `${Math.round(p.kcal)} kcal`).join(' / ')}
+                </p>
+              </button>
+            ))}
+            {suggestions.data?.length === 0 && !suggestions.isLoading && (
+              <p className="px-2 py-3 text-center text-xs text-slate-400">No suggestions available.</p>
+            )}
+          </div>
+        )}
+
+        <div className="mb-4 max-h-56 space-y-1.5 overflow-y-auto pr-1">
           {(recipes ?? []).map((recipe) => (
             <button
               key={recipe.id}

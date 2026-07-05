@@ -6,8 +6,21 @@ using Microsoft.AspNetCore.Mvc;
 namespace MacroSync.Api.Controllers;
 
 [Route("api/v1/plans")]
-public class PlansController(IMealPlanService plans) : ApiControllerBase
+public class PlansController(IMealPlanService plans, IRecommendationService recommendations) : ApiControllerBase
 {
+    /// <summary>Dishes that fit everyone's remaining targets for a slot — AI-ranked when configured (Phase 2).</summary>
+    [HttpGet("{planId:guid}/recommendations")]
+    public async Task<ActionResult<IReadOnlyList<MealRecommendationDto>>> GetRecommendations(
+        Guid planId, [FromQuery] string date, [FromQuery] string slot, CancellationToken ct)
+    {
+        if (!DateOnly.TryParse(date, out var parsed))
+            return BadRequest(new ProblemDetails { Title = "date must be a valid yyyy-MM-dd date." });
+        if (!new[] { "Breakfast", "Lunch", "Dinner", "Snack" }.Contains(slot))
+            return BadRequest(new ProblemDetails { Title = "slot must be Breakfast, Lunch, Dinner or Snack." });
+
+        return Ok(await recommendations.RecommendAsync(planId, parsed, slot, ct));
+    }
+
     /// <summary>Add dish to a slot → triggers portion solve for all members.</summary>
     [Authorize]
     [HttpPost("{planId:guid}/meals")]

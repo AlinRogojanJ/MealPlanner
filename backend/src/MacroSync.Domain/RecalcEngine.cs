@@ -14,7 +14,9 @@ public record RecalcProposal(
     IReadOnlyList<MealAdjustment> Adjustments,
     decimal AbsorbedKcal,
     /// <summary>Overage that could NOT be absorbed without unhealthy cuts — shown honestly.</summary>
-    decimal UnabsorbedKcal);
+    decimal UnabsorbedKcal,
+    /// <summary>"Rules" (v1 engine) or "AI" (advisor-proposed mix, validated by the rules bounds).</summary>
+    string Source = "Rules");
 
 public static class RecalcEngine
 {
@@ -44,5 +46,39 @@ public static class RecalcEngine
             adjustments,
             AbsorbedKcal: Math.Round(absorbed),
             UnabsorbedKcal: Math.Round(overageKcal - absorbed));
+    }
+
+    /// <summary>
+    /// Prices an externally proposed per-meal scale mix (e.g. from the AI advisor).
+    /// Scales are clamped to the safe band; the arithmetic here stays the truth.
+    /// </summary>
+    public static RecalcProposal PriceCandidates(
+        decimal overageKcal,
+        IReadOnlyList<RemainingMeal> remainingMeals,
+        IReadOnlyDictionary<Guid, decimal> proposedScales,
+        string source)
+    {
+        var adjustments = remainingMeals
+            .Select(m =>
+            {
+                var scale = proposedScales.TryGetValue(m.PlannedMealId, out var s)
+                    ? Math.Clamp(s, MinMealScale, 1m)
+                    : 1m;
+                return new MealAdjustment(
+                    m.PlannedMealId, m.RecipeName, m.SlotType,
+                    OldKcal: Math.Round(m.PlannedKcal),
+                    NewKcal: Math.Round(m.PlannedKcal * scale),
+                    Scale: Math.Round(scale, 3));
+            })
+            .Where(a => a.Scale < 1m)
+            .ToList();
+
+        var absorbed = adjustments.Sum(a => a.OldKcal - a.NewKcal);
+        return new RecalcProposal(
+            Math.Round(overageKcal),
+            adjustments,
+            AbsorbedKcal: Math.Round(absorbed),
+            UnabsorbedKcal: Math.Max(0, Math.Round(overageKcal - absorbed)),
+            Source: source);
     }
 }

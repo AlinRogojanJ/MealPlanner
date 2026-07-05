@@ -35,6 +35,15 @@ If the API isn't running, the frontend falls back to snapshots in `frontend/src/
 cd backend && dotnet test
 ```
 
+## AI recalc & recommendations (Phase 2)
+
+Set an Anthropic API key in `appsettings.json` → `Ai:AnthropicApiKey` (or the `ANTHROPIC_API_KEY` env var) to enable:
+
+- **AI auto-recalc** — Claude proposes a preference-aware mix of meal adjustments after an off-plan log (protects protein, shrinks snacks first); the rules engine clamps and re-prices every proposal, so the arithmetic stays deterministic.
+- **AI meal recommendations** — "✨ Suggest for us" in the add-dish modal ranks dishes that fit everyone's remaining targets, with reasons.
+
+Without a key, both fall back to the rules-based engine (marked accordingly in the UI). Endpoint: `GET /api/v1/plans/{planId}/recommendations?date=&slot=`.
+
 ## Data source: Mock vs Sql
 
 `backend/src/MacroSync.Api/appsettings.json` → `"DataSource"`:

@@ -138,6 +138,15 @@ export interface SuggestionDto {
   absorbedKcal: number
   unabsorbedKcal: number
   adjustments: MealAdjustmentDto[]
+  source: 'Rules' | 'AI'
+}
+
+export interface MealRecommendationDto {
+  recipeId: string
+  recipeName: string
+  reason: string
+  portions: PortionDto[]
+  source: 'Rules' | 'AI'
 }
 
 export interface LogFoodResponse {

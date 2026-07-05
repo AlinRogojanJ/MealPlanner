@@ -126,6 +126,15 @@ public record FoodLogDto(
     decimal CarbsG,
     decimal FatG);
 
+// ---- AI meal recommendations (Phase 2) ----
+
+public record MealRecommendationDto(
+    Guid RecipeId,
+    string RecipeName,
+    string Reason,            // why this dish fits both people's remaining targets
+    List<PortionDto> Portions,
+    string Source);           // "AI" | "Rules"
+
 public record MealAdjustmentDto(
     Guid PlannedMealId,
     string RecipeName,
@@ -142,6 +151,7 @@ public record SuggestionDto(
     decimal OverageKcal,
     decimal AbsorbedKcal,
     decimal UnabsorbedKcal,
-    List<MealAdjustmentDto> Adjustments);
+    List<MealAdjustmentDto> Adjustments,
+    string Source = "Rules"); // "AI" when the adjustment mix came from the AI advisor
 
 public record LogFoodResponse(FoodLogDto Log, SuggestionDto? Suggestion);

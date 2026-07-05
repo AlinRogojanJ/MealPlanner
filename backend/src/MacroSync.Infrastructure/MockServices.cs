@@ -33,7 +33,8 @@ internal static class Mapping
         return new SuggestionDto(s.Id, s.UserId, s.Date.ToString("yyyy-MM-dd"), s.Status.ToString(),
             proposal.OverageKcal, proposal.AbsorbedKcal, proposal.UnabsorbedKcal,
             proposal.Adjustments.Select(a => new MealAdjustmentDto(
-                a.PlannedMealId, a.RecipeName, a.SlotType, a.OldKcal, a.NewKcal, a.Scale)).ToList());
+                a.PlannedMealId, a.RecipeName, a.SlotType, a.OldKcal, a.NewKcal, a.Scale)).ToList(),
+            proposal.Source);
     }
 
     public static FoodLogDto ToDto(FoodLog log) => new(
@@ -280,9 +281,9 @@ public class MockProfileService(MockDb db) : IProfileService
     }
 }
 
-public class MockFoodLogService(MockDb db) : IFoodLogService
+public class MockFoodLogService(MockDb db, Ai.RecalcPlanner planner) : IFoodLogService
 {
-    public Task<LogFoodResponse> LogAsync(LogFoodRequest request, CancellationToken ct = default)
+    public async Task<LogFoodResponse> LogAsync(LogFoodRequest request, CancellationToken ct = default)
     {
         var date = DateOnly.Parse(request.Date);
         var log = new FoodLog
@@ -311,7 +312,9 @@ public class MockFoodLogService(MockDb db) : IFoodLogService
                 .Select(p => new RemainingMeal(m.Id, db.Recipes.First(r => r.Id == m.RecipeId).Name, m.SlotType.ToString(), p.Kcal)))
             .ToList();
 
-        var proposal = RecalcEngine.Propose(request.Kcal, remainingMeals);
+        var dietType = db.Profiles.FirstOrDefault(p => p.UserId == request.UserId && p.IsActive)
+            ?.DietType.ToString() ?? "Maintain";
+        var proposal = await planner.ProposeAsync(request.Description, request.Kcal, dietType, remainingMeals, ct);
 
         RecalcSuggestion? suggestion = null;
         if (proposal.Adjustments.Count > 0 || proposal.UnabsorbedKcal > 0)
@@ -329,8 +332,8 @@ public class MockFoodLogService(MockDb db) : IFoodLogService
             db.Suggestions.Add(suggestion);
         }
 
-        return Task.FromResult(new LogFoodResponse(
-            Mapping.ToDto(log), suggestion is null ? null : Mapping.ToDto(suggestion)));
+        return new LogFoodResponse(
+            Mapping.ToDto(log), suggestion is null ? null : Mapping.ToDto(suggestion));
     }
 
     public Task<IReadOnlyList<FoodLogDto>> GetForDayAsync(Guid userId, DateOnly date, CancellationToken ct = default)
@@ -386,6 +389,35 @@ public class MockSuggestionService(MockDb db) : ISuggestionService
         if (suggestion is null) return Task.FromResult<SuggestionDto?>(null);
         suggestion.Status = SuggestionStatus.Dismissed;
         return Task.FromResult<SuggestionDto?>(Mapping.ToDto(suggestion));
+    }
+}
+
+public class MockRecommendationService(MockDb db, IAiAdvisor advisor) : IRecommendationService
+{
+    public async Task<IReadOnlyList<MealRecommendationDto>> RecommendAsync(
+        Guid planId, DateOnly date, string slotType, CancellationToken ct = default)
+    {
+        var plan = db.Plans.FirstOrDefault(p => p.Id == planId);
+        if (plan is null) return [];
+
+        var eaters = db.Household.Members
+            .Select(m =>
+            {
+                var user = db.Users.First(u => u.Id == m.UserId);
+                var profile = db.Profiles.First(p => p.UserId == m.UserId && p.IsActive);
+                return new Ai.RecEater(user.Id, user.DisplayName, profile.DietType.ToString(), profile.CalorieTarget);
+            })
+            .ToList();
+
+        // Variety signal: dishes already planned in the two days before this slot.
+        var recent = plan.Meals
+            .Where(m => m.Date <= date && m.Date >= date.AddDays(-2))
+            .Select(m => db.Recipes.First(r => r.Id == m.RecipeId).Name)
+            .Distinct()
+            .ToList();
+
+        return await Ai.RecommendationEngine.RecommendAsync(
+            advisor, slotType, db.Recipes, db.IngredientsById, eaters, recent, ct);
     }
 }
 

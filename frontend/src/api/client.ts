@@ -6,6 +6,7 @@ import type {
   HouseholdDto,
   LogFoodRequest,
   LogFoodResponse,
+  MealRecommendationDto,
   MemberDto,
   PlannedMealDto,
   RecipeDto,
@@ -116,6 +117,12 @@ export const api = {
 
   createShareLink: (planId: string) =>
     post<ShareLinkDto>(`/api/v1/plans/${planId}/grocery-list/share`, {}),
+
+  getRecommendations: (planId: string, date: string, slot: string) =>
+    get<MealRecommendationDto[]>(
+      `/api/v1/plans/${planId}/recommendations?date=${date}&slot=${slot}`,
+      [],
+    ),
 
   // ---- Off-plan logging & recalc (writes need the API running — no mock fallback) ----
 
